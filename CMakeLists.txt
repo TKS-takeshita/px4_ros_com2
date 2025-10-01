@@ -25,6 +25,10 @@ find_package(px4_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(rclpy REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+
 
 #################
 # Setup targets #
@@ -58,7 +62,7 @@ install(TARGETS debug_vect_advertiser DESTINATION lib/${PROJECT_NAME})
 
 # examples/offboard/offboard_control
 add_executable(offboard_control src/examples/offboard/offboard_control.cpp)
-ament_target_dependencies(offboard_control rclcpp px4_msgs)
+ament_target_dependencies(offboard_control rclcpp px4_msgs sensor_msgs geometry_msgs)
 install(TARGETS offboard_control DESTINATION lib/${PROJECT_NAME})
 
 # examples/offboard/offboard_control_srv
@@ -66,6 +70,24 @@ add_executable(offboard_control_srv src/examples/offboard/offboard_control_srv.c
 ament_target_dependencies(offboard_control_srv rclcpp px4_msgs)
 install(TARGETS offboard_control_srv DESTINATION lib/${PROJECT_NAME})
 
+add_executable(offboard_PID src/examples/offboard/offboard_PID.cpp)
+ament_target_dependencies(offboard_PID rclcpp px4_msgs sensor_msgs geometry_msgs nav_msgs tf2 tf2_geometry_msgs Eigen3)
+find_package(Curses REQUIRED)
+target_include_directories(offboard_PID PRIVATE ${CURSES_INCLUDE_DIR} ${CURSES_INCLUDE_DIRS})
+target_link_libraries(offboard_PID
+  frame_transforms
+  ${CURSES_LIBRARIES}
+)
+
+install(TARGETS offboard_PID DESTINATION lib/${PROJECT_NAME})
+add_executable(vehicle_odometry src/examples/offboard/vehicle_odometry.cpp)
+ament_target_dependencies(vehicle_odometry rclcpp px4_msgs nav_msgs Eigen3)
+target_link_libraries(vehicle_odometry frame_transforms)
+install(TARGETS vehicle_odometry DESTINATION lib/${PROJECT_NAME})
+
+add_executable(record_odom src/examples/offboard/record_odom.cpp)
+ament_target_dependencies(record_odom rclcpp px4_msgs nav_msgs Eigen3)
+install(TARGETS record_odom DESTINATION lib/${PROJECT_NAME})
 
 ############
 # Install ##

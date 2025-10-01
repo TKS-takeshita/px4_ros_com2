@@ -1,0 +1,16 @@
+offboard_pid_control:
+  ros__parameters:
+    VK_p: 8.5
+    AK_p: 0.3
+    Kp_r: 0.5
+    Kd_r: 0.1
+    Ki_r: 0.001
+    Kp_p: 0.5
+    Kd_p: 0.1
+    Ki_p: 0.001
+    Kp_y: 0.5
+    Kd_y: 0.1
+    Ki_y: 0.001
+    I_max: 0.5
+    mass: 3.14
+    HOOVER: 0.70

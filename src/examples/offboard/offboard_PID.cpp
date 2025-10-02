@@ -35,13 +35,16 @@ OffboardPIDControl::OffboardPIDControl() : rclcpp::Node("offboard_pid_control"){
             this->arm();
 		}
         
-        publish_offboard_control_mode();
+        
         if(start_actuator){
+            publish_offboard_actuator_control_mode();
             publish_actuator_setpoint();
         }
         else{
+            publish_offboard_position_control_mode();
             publish_motor_setpoint();
         }
+        // publish_actuator_setpoint();
         if (offboard_setpoint_counter_ < 101) {
             offboard_setpoint_counter_++;
         }
@@ -222,6 +225,10 @@ void OffboardPIDControl::controlLoop(){
     new_speeds[1] = (U1-U4)/4.0 - U3/2.0;//B CCW
     new_speeds[2] = (U1+U4)/4.0 + U2/2.0;//R CW
     new_speeds[3] = (U1-U4)/4.0 - U2/2.0;//L CW
+    // new_speeds[0] = 0.95;//F CCW
+    // new_speeds[1] = 0.95;//B CCW
+    // new_speeds[2] = 0.95;//R CW
+    // new_speeds[3] = 0.95;//L CW
 
     // RCLCPP_INFO(this->get_logger(), "new_speeds: [%f, %f, %f, %f]", new_speeds[0], new_speeds[1], new_speeds[2], new_speeds[3]);
 
@@ -231,7 +238,7 @@ void OffboardPIDControl::controlLoop(){
     }
 }
 
-void OffboardPIDControl::publish_offboard_control_mode(){
+void OffboardPIDControl::publish_offboard_position_control_mode(){
     OffboardControlMode msg{};
 	msg.position = true;
 	msg.velocity = false;
@@ -239,6 +246,18 @@ void OffboardPIDControl::publish_offboard_control_mode(){
 	msg.attitude = false;
 	msg.body_rate = false;
 	msg.direct_actuator = false;//
+	msg.timestamp = steady_clock_.now().nanoseconds() / 1000;
+	offboard_control_mode_publisher_->publish(msg);
+}
+
+void OffboardPIDControl::publish_offboard_actuator_control_mode(){
+    OffboardControlMode msg{};
+	msg.position = false;
+	msg.velocity = false;
+	msg.acceleration = false;
+	msg.attitude = false;
+	msg.body_rate = false;
+	msg.direct_actuator = true;//
 	msg.timestamp = steady_clock_.now().nanoseconds() / 1000;
 	offboard_control_mode_publisher_->publish(msg);
 }

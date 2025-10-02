@@ -44,11 +44,13 @@ public:
         std::tm tm{};
         localtime_r(&tt, &tm);
 
-        const std::string px4_fname  = dir + "px4_odom_" + ".csv";
-        const std::string slam_fname = dir + "slam_odom_" + ".csv";
+        const std::string px4_fname  = dir + "px4_odom.csv";
+        const std::string slam_fname = dir + "slam_odom.csv";
+        const std::string imu_fname = dir + "madgwick_imu.csv";
 
         csv_.open(px4_fname,  std::ios::out);
         csv_slam_.open(slam_fname, std::ios::out);
+        csv_imu.open(imu_fname, std::ios::out);
 
         if (!csv_) {
             RCLCPP_ERROR(this->get_logger(), "Failed to open CSV file: %s", px4_fname.c_str());
@@ -65,6 +67,15 @@ public:
             csv_slam_ << "timestamp_us,px,py,pz,qw,qx,qy,qz\n";
             csv_slam_.flush();
         }
+
+        if (!csv_imu) {
+            RCLCPP_ERROR(this->get_logger(), "Failed to open CSV_IMU file: %s", imu_fname.c_str());
+        } else {
+            RCLCPP_INFO(this->get_logger(), "Logging slam_odom to: %s", imu_fname.c_str());
+            csv_imu << "timestamp_us,qw,qx,qy,qz,avx,avy,avz,ax,ay,az\n";
+            csv_imu.flush();
+        }
+
 
         // FAST-LIO の Odometry を購読
         odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
@@ -131,7 +142,8 @@ private:
     std::mutex vel_mutex;
     std::ofstream csv_;
     std::ofstream csv_slam_;
-    Eigen::Matrix3d FLU2FRD_world;
+    std::ofstream csv_imu;
+    Eigen::Matrix3d FLU2FRD_world = Eigen::AngleAxisd(M_PI, Eigen::Vector3d::UnitX()).toRotationMatrix();
     Eigen::Quaterniond pre_imu_pose = Eigen::Quaterniond::Identity();
     Eigen::Quaterniond pre_slam_pose = Eigen::Quaterniond::Identity();
 
@@ -184,10 +196,10 @@ private:
             msg->orientation.y,
             msg->orientation.z
         );
-        if(curr_pose.dot(pre_imu_pose) < 0.0){
-            curr_pose.coeffs() *= -1.0;
-        }
-        pre_imu_pose = curr_pose;
+        // if(curr_pose.dot(pre_imu_pose) < 0.0){
+        //     curr_pose.coeffs() *= -1.0;
+        // }
+        // pre_imu_pose = curr_pose;
         if(!init_done){
             q_init_inv = curr_pose.conjugate();
             init_done = true;
@@ -201,18 +213,19 @@ private:
         auto a_w_frd = enu_to_frd_vec(a_w_flu);
 
         geometry_msgs::msg::Twist curr_vel = pre_vel;//FRD
-        curr_vel.linear.x += a_w_frd.x() * dt;
-        curr_vel.linear.y += a_w_frd.y() * dt;
-        curr_vel.linear.z += a_w_frd.z() * dt;
+        // curr_vel.linear.x += a_w_frd.x() * dt;
+        // curr_vel.linear.y += a_w_frd.y() * dt;
+        // curr_vel.linear.z += a_w_frd.z() * dt;
+
         Eigen::Vector3d v_w(curr_vel.linear.x, curr_vel.linear.y, curr_vel.linear.z);
         curr_posi = pre_posi + v_w * dt;//FRD
         orientation_FRD = (q_FLU2FRD_world * curr_pose * q_FLU2FRD_world.conjugate()).normalized();
         position_FRD = curr_posi;
-        vel_mutex.lock();
-        pre_vel.linear.x = v_w.x();
-        pre_vel.linear.y = v_w.y();
-        pre_vel.linear.z = v_w.z();
-        vel_mutex.unlock();
+        // vel_mutex.lock();
+        // pre_vel.linear.x = v_w.x();
+        // pre_vel.linear.y = v_w.y();
+        // pre_vel.linear.z = v_w.z();
+        // vel_mutex.unlock();
         pre_posi = position_FRD;
         
         px4_msgs::msg::VehicleOdometry px4_odom;
@@ -283,6 +296,19 @@ private:
              << px4_odom.q[0] << "," << px4_odom.q[1] << "," << px4_odom.q[2] << "," << px4_odom.q[3] << ","
              << yaw_imu << "," << yaw_slam
              << "\n";
+
+        csv_imu << px4_odom.timestamp << ","
+                << msg->orientation.w << ","
+                << msg->orientation.x << ","
+                << msg->orientation.y << ","
+                << msg->orientation.z << ","
+                << avel_w_frd.x() << ","
+                << avel_w_frd.y() << ","
+                << avel_w_frd.z() << ","
+                << a_w_flu.x() << ","
+                << a_w_flu.y() << ","
+                << a_w_flu.z()
+                << "\n";
     }
 
     void odom_callback(const nav_msgs::msg::Odometry::SharedPtr &msg)
@@ -296,7 +322,7 @@ private:
         Eigen::Vector3d position_slam(msg->pose.pose.position.x,
                                      msg->pose.pose.position.y,
                                      msg->pose.pose.position.z);
-        pre_posi = (FLU2FRD_world * position_slam);
+        pre_posi = FLU2FRD_world * position_slam;
         Eigen::Quaterniond orientation_slam(msg->pose.pose.orientation.w,
                                  msg->pose.pose.orientation.x,
                                  msg->pose.pose.orientation.y,
@@ -318,12 +344,12 @@ private:
             msg->pose.covariance[27], msg->pose.covariance[28], msg->pose.covariance[29],
             msg->pose.covariance[33], msg->pose.covariance[34], msg->pose.covariance[35]
         };
-        // vel_mutex.lock();
-        // auto vel = (pre_posi - pre_position_slam) / dt;
-        // pre_vel.linear.x = vel.x();
-        // pre_vel.linear.y = vel.y();
-        // pre_vel.linear.z = vel.z();
-        // vel_mutex.unlock();
+        vel_mutex.lock();
+        auto vel = (pre_posi - pre_position_slam) / dt;
+        pre_vel.linear.x = vel.x();
+        pre_vel.linear.y = vel.y();
+        pre_vel.linear.z = vel.z();
+        vel_mutex.unlock();
         cov_pos_px4 = px4_ros_com::frame_transforms::transform_static_frame(cov_pos_ros, StaticTF::ENU_TO_NED);
         cov_rot_px4 = px4_ros_com::frame_transforms::transform_frame(cov_rot_ros, orientation_FRD);
         pre_position_slam = pre_posi;

@@ -61,7 +61,8 @@ private:
     void arm();
     void disarm();
     void controlLoop();
-    void publish_offboard_control_mode();
+    void publish_offboard_actuator_control_mode();
+    void publish_offboard_position_control_mode();
     void publish_vehicle_command(uint16_t command, float param1 = 0.0, float param2 = 0.0);
     void publish_motor_setpoint();
     void publish_actuator_setpoint();

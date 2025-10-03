@@ -78,12 +78,16 @@ target_link_libraries(offboard_PID
   frame_transforms
   ${CURSES_LIBRARIES}
 )
-
 install(TARGETS offboard_PID DESTINATION lib/${PROJECT_NAME})
+
 add_executable(vehicle_odometry src/examples/offboard/vehicle_odometry.cpp)
 ament_target_dependencies(vehicle_odometry rclcpp px4_msgs nav_msgs Eigen3)
 target_link_libraries(vehicle_odometry frame_transforms)
 install(TARGETS vehicle_odometry DESTINATION lib/${PROJECT_NAME})
+
+add_executable(test_motor_mapping src/examples/offboard/test_motor_mapping.cpp)
+ament_target_dependencies(test_motor_mapping rclcpp px4_msgs)
+install(TARGETS test_motor_mapping DESTINATION lib/${PROJECT_NAME})
 
 add_executable(record_odom src/examples/offboard/record_odom.cpp)
 ament_target_dependencies(record_odom rclcpp px4_msgs nav_msgs Eigen3)

@@ -107,7 +107,6 @@ private:
     Covariance3d cov_pos_px4;
     Covariance3d cov_rot_px4;
     std::ofstream csv_;
-    std::ofstream csv_slam_;
     const Eigen::Quaterniond q_FLU2FRD_world{
         Eigen::AngleAxisd(M_PI, Eigen::Vector3d::UnitX())
     };
@@ -146,7 +145,6 @@ private:
     const double THROTTLE_FULL = 0.99;
 
     double HOOVER = 0.73;
-
     int rate = 5; //制御周期　5ms = 200Hz
 
     double TARGET_X = 0.0;

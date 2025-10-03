@@ -10,7 +10,6 @@ OffboardPIDControl::OffboardPIDControl() : rclcpp::Node("offboard_pid_control"){
     get_param();
     last_us = this->get_clock()->now().nanoseconds() / 1000;
     slam_last_ns = last_us * 1000;
-
     // Publisher
     offboard_control_mode_publisher_ = this->create_publisher<OffboardControlMode>("/fmu/in/offboard_control_mode", 10);
     vehicle_command_publisher_ = this->create_publisher<VehicleCommand>("/fmu/in/vehicle_command", 10);
@@ -21,7 +20,34 @@ OffboardPIDControl::OffboardPIDControl() : rclcpp::Node("offboard_pid_control"){
     "/fmu/in/vehicle_visual_odometry",                 // 読み取りは out 側
     rclcpp::SensorDataQoS(),
     std::bind(&OffboardPIDControl::VehicleCallback, this, std::placeholders::_1));
-
+    const std::string dir = "/home/ros2/ws_sensor_combined/src/px4_ros_com/csv/";
+    std::filesystem::create_directories(dir);
+    const std::string pid_log = dir + "pid_log.csv";
+    csv_.open(pid_log, std::ios::out);
+    if(!csv_.is_open()){
+        RCLCPP_ERROR(this->get_logger(), "Could not open file: %s", pid_log.c_str());
+    }
+    else{
+        RCLCPP_INFO(this->get_logger(), "Opened file: %s", pid_log.c_str());
+        csv_    << "timestamp_us,"
+                << "yaw_err,"
+                << "pitch_err,"
+                << "roll_err,"
+                << "curr_yaw,"
+                << "curr_pitch,"
+                << "curr_roll,"
+                << "att_0,"
+                << "att_1,"
+                << "att_2,"
+                << "U1,"
+                << "U2,"
+                << "U3,"
+                << "U4,"
+                << "n0,"
+                << "n1,"
+                << "n2,"
+                << "n3\n";
+    }
     auto timer_callback = [this]() -> void {
         if(!start_motor){
             return;
@@ -82,6 +108,7 @@ void OffboardPIDControl::key_input(){
            int ch = getch();
            if (ch == 's' || ch == 'S') {
                start_motor = true;
+               RCLCPP_INFO(this->get_logger(), "Kp_r: %f", Kp_r);
                RCLCPP_WARN(this->get_logger(), "'s' received: control loop enabled.");
            } else if (ch == 'a' || ch == 'A') {
                start_actuator = true;
@@ -118,7 +145,16 @@ void OffboardPIDControl::key_input(){
 }
 
 double OffboardPIDControl::throttle_thrust(double thr){
-    return (thr - 3.6535)/17.326;
+    if(thr > 4.0){
+        return (thr + 3.6535)/17.326;
+    }
+    else if(thr <= 4.0 && thr > 0.0){
+        return thr/11.942;
+    }
+    else{
+        thr = -thr;
+        return -throttle_thrust(thr);
+    }
 }
 
 void OffboardPIDControl::arm()
@@ -162,7 +198,7 @@ void OffboardPIDControl::controlLoop(){
     Eigen::Vector3d position_error = target_position_ - current_position_;//global FRD
     Eigen::Vector3d target_velocity_ = VK_p * position_error.normalized();//FRD
     Eigen::Vector3d velocity_error = target_velocity_ - current_velocity_;//gloabl FRD
-    target_acceleration_ = AK_p* velocity_error;//global FRD
+    target_acceleration_ = AK_p* velocity_error.normalized();//global FRD
     prev_velocity_ = current_velocity_;
     target_acceleration_[2] -= gravity_acceleration; // 重力加速度を補償
     // RCLCPP_INFO(this->get_logger(), "target_acceleration_: [%f, %f, %f]", target_acceleration_.x(), target_acceleration_.y(), target_acceleration_.z());
@@ -176,6 +212,16 @@ void OffboardPIDControl::controlLoop(){
     target_R.col(0) = X_b;
     target_R.col(1) = Y_b;
     target_R.col(2) = Z_b;
+    //テスト姿勢
+    // thrust_magnitude = 50.3;
+    // double test_roll = 0.2;
+    // double test_pitch = 0.0;
+    // double test_yaw = 0.0;
+
+    target_R = Eigen::AngleAxisd(test_yaw, Eigen::Vector3d::UnitZ())
+           * Eigen::AngleAxisd(test_pitch, Eigen::Vector3d::UnitY())
+           * Eigen::AngleAxisd(test_roll, Eigen::Vector3d::UnitX());
+    
     target_orientation_ = Eigen::Quaterniond(target_R);
     Eigen::Vector3d target_euler = target_R.eulerAngles(2, 1, 0);
     Eigen::Vector3d current_euler = current_rot_matrix_.eulerAngles(2, 1, 0);
@@ -220,15 +266,15 @@ void OffboardPIDControl::controlLoop(){
     // new_speeds[2] = (U1+U4)/4.0 + U2/2.0;//R CCW
     // new_speeds[3] = (U1+U4)/4.0 - U2/2.0;//L CCW
 
-    //simulator
+    // //simulator
     new_speeds[0] = (U1+U4)/4.0 + U3/2.0;//F CCW
-    new_speeds[1] = (U1-U4)/4.0 - U3/2.0;//B CCW
-    new_speeds[2] = (U1+U4)/4.0 + U2/2.0;//R CW
-    new_speeds[3] = (U1-U4)/4.0 - U2/2.0;//L CW
-    // new_speeds[0] = 0.95;//F CCW
-    // new_speeds[1] = 0.95;//B CCW
-    // new_speeds[2] = 0.95;//R CW
-    // new_speeds[3] = 0.95;//L CW
+    new_speeds[1] = (U1-U4)/4.0 + U2/2.0;//L CCW
+    new_speeds[2] = (U1+U4)/4.0 - U3/2.0;//B CW
+    new_speeds[3] = (U1-U4)/4.0 - U2/2.0;//R CW
+    // new_speeds[0] = 0;//F CCW
+    // new_speeds[1] = 0.95;//R CCW
+    // new_speeds[2] = 0;//B CW
+    // new_speeds[3] = 0;//L CW
 
     // RCLCPP_INFO(this->get_logger(), "new_speeds: [%f, %f, %f, %f]", new_speeds[0], new_speeds[1], new_speeds[2], new_speeds[3]);
 
@@ -236,6 +282,25 @@ void OffboardPIDControl::controlLoop(){
         if (new_speeds[i] < THROTTLE_OFF) new_speeds[i] = THROTTLE_OFF;
         if (new_speeds[i] > THROTTLE_FULL) new_speeds[i] = THROTTLE_FULL;
     }
+
+    csv_ << steady_clock_.now().nanoseconds() / 1000 << ","
+          << yaw_err << ","
+          << pitch_err << ","
+          << roll_err << ","
+          << current_yaw << ","
+          << current_pitch << ","
+          << current_roll << ","
+          << att_control[0] << ","
+          << att_control[1] << ","
+          << att_control[2] << ","
+          << U1 << ","
+          << U2 << ","
+          << U3 << ","
+          << U4 << ","
+          << new_speeds[0] << ","
+          << new_speeds[1] << ","
+          << new_speeds[2] << ","
+          << new_speeds[3] << "\n";
 }
 
 void OffboardPIDControl::publish_offboard_position_control_mode(){

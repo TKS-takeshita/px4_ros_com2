@@ -7,7 +7,7 @@ def generate_launch_description():
        Node(
            package='px4_ros_com',
            executable='offboard_PID',
-           name='offboard_PID',
+           name='offboard_pid_control',
            output='screen',
            prefix='/usr/bin/xterm -T offboard_PID -e',
            emulate_tty=True,

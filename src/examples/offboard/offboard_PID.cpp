@@ -36,6 +36,9 @@ OffboardPIDControl::OffboardPIDControl() : rclcpp::Node("offboard_pid_control"){
                 << "curr_yaw,"
                 << "curr_pitch,"
                 << "curr_roll,"
+                << "target_yaw,"
+                << "target_pitch,"
+                << "target_roll,"
                 << "att_0,"
                 << "att_1,"
                 << "att_2,"
@@ -93,6 +96,7 @@ void OffboardPIDControl::get_param(){
     Kp_y = this->declare_parameter<double>("Kp_y", 0.5);
     Kd_y = this->declare_parameter<double>("Kd_y", 0.1);
     Ki_y = this->declare_parameter<double>("Ki_y", 0.001);
+    Kt = this->declare_parameter<double>("Kt", 1.4);
     I_max = this->declare_parameter<double>("I_MAX", 0.5);
     mass = this->declare_parameter<double>("mass", 3.14);
     HOOVER = this->declare_parameter<double>("HOOVER", 0.70);
@@ -113,6 +117,16 @@ void OffboardPIDControl::key_input(){
            } else if (ch == 'a' || ch == 'A') {
                start_actuator = true;
                RCLCPP_WARN(this->get_logger(), "'a' received: actuator control enabled.");
+           }
+           else if (ch == 'q' || ch == 'Q') {
+               disarm();
+               stop = true;
+               RCLCPP_WARN(this->get_logger(), "'q' received: Disarm command send.");
+
+           }
+           else if(ch == 'w' || ch == 'W'){
+                arm();
+                RCLCPP_WARN(this->get_logger(), "'w' received: Arm command send.");
            }
            else if(ch == KEY_UP){
                TARGET_X += 0.5;
@@ -200,10 +214,16 @@ void OffboardPIDControl::controlLoop(){
     Eigen::Vector3d velocity_error = target_velocity_ - current_velocity_;//gloabl FRD
     target_acceleration_ = AK_p* velocity_error.normalized();//global FRD
     prev_velocity_ = current_velocity_;
-    target_acceleration_[2] -= gravity_acceleration; // 重力加速度を補償
+    if(position_error.norm() < 0.4){
+        target_acceleration_ = Eigen::Vector3d::Zero();
+    }
+    target_acceleration_[2] -= (gravity_acceleration+2.0); // 重力加速度を補償
     // RCLCPP_INFO(this->get_logger(), "target_acceleration_: [%f, %f, %f]", target_acceleration_.x(), target_acceleration_.y(), target_acceleration_.z());
     Eigen::Vector3d target_thrust = target_acceleration_ * mass; // 推力 = 加速度 * 質量
-    double thrust_magnitude = target_thrust.norm();
+    double thrust_magnitude = Kt * target_thrust.norm();
+    if(position_error.norm() > 0.4){
+        thrust_magnitude = thrust_magnitude * 1.1;
+    }
     Eigen::Vector3d Z_b = -target_thrust.normalized();//機体のZ軸(推力方向) FRD
     Eigen::Vector3d X_c = {std::cos(target_yaw), std::sin(target_yaw), 0.0};
     Eigen::Vector3d Y_b = Z_b.cross(X_c) / ((Z_b.cross(X_c)).norm());
@@ -218,13 +238,30 @@ void OffboardPIDControl::controlLoop(){
     // double test_pitch = 0.0;
     // double test_yaw = 0.0;
 
-    target_R = Eigen::AngleAxisd(test_yaw, Eigen::Vector3d::UnitZ())
-           * Eigen::AngleAxisd(test_pitch, Eigen::Vector3d::UnitY())
-           * Eigen::AngleAxisd(test_roll, Eigen::Vector3d::UnitX());
+    // target_R = Eigen::AngleAxisd(test_yaw, Eigen::Vector3d::UnitZ())
+    //        * Eigen::AngleAxisd(test_pitch, Eigen::Vector3d::UnitY())
+    //        * Eigen::AngleAxisd(test_roll, Eigen::Vector3d::UnitX());
     
     target_orientation_ = Eigen::Quaterniond(target_R);
     Eigen::Vector3d target_euler = target_R.eulerAngles(2, 1, 0);
     Eigen::Vector3d current_euler = current_rot_matrix_.eulerAngles(2, 1, 0);
+    for (int i = 0; i < 2; ++i) {
+        target_euler[i] = wrapPi(target_euler[i]);
+        if (std::abs(target_euler[i]) > M_PI - 1.4e-1) {
+            target_euler[i] = 0.0;
+        }
+    }
+    int count = 0;
+    for(int i = 0; i < 2; ++i){
+        current_euler[i] = wrapPi(current_euler[i]);
+        if(std::abs(current_euler[i]) > M_PI - 1.4e-1){
+            count++;
+            current_euler[i] = 1e-5;
+        }
+        if (count == 2 && std::abs(current_euler[2]) > M_PI - 1.4e-1) {
+            current_euler[2] = 0.0;
+        }
+    }
     double target_roll = target_euler[2];
     double target_pitch = target_euler[1];
     double current_roll = current_euler[2];
@@ -290,6 +327,9 @@ void OffboardPIDControl::controlLoop(){
           << current_yaw << ","
           << current_pitch << ","
           << current_roll << ","
+          << target_yaw << ","
+          << target_pitch << ","
+          << target_roll << ","
           << att_control[0] << ","
           << att_control[1] << ","
           << att_control[2] << ","
@@ -347,6 +387,11 @@ void OffboardPIDControl::publish_actuator_setpoint(){
     msg.control[1] = new_speeds[1];
     msg.control[2] = new_speeds[2];
     msg.control[3] = new_speeds[3];
+    if(stop){
+        for(int i=0; i<4; i++){
+            msg.control[i] = 0.0;
+        }
+    }
     actuator_publisher_->publish(msg);
 }
 void OffboardPIDControl::publish_motor_setpoint(){

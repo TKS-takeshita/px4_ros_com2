@@ -119,7 +119,7 @@ private:
     static constexpr double gravity_acceleration = 9.81; //重力加速度
 
     double VK_p = 1.0; //位置制御の比例ゲイン
-    double AK_p = 1.0; //速度制御の比例ゲイン
+    double AK_p = 2.5; //速度制御の比例ゲイン
 
     double I_max; //積分項の最大値
     double Kp_r;
@@ -131,6 +131,7 @@ private:
     double Ki_r;
     double Ki_p;
     double Ki_y;
+    double Kt;
     bool init_pix_att = false;
     
     double mass; //機体質量[kg]
@@ -157,6 +158,7 @@ private:
     double new_speeds[4] = {0.0, 0.0, 0.0, 0.0};//各モータへの出力
     bool run = true;//実行フラグ
     bool start_motor = false; //モータ始動フラグ
+    bool stop = false;
     std::thread key_thread_;//キーボード入力用スレッド
     bool start_actuator = false; //アクチュエータ始動フラグ
 };

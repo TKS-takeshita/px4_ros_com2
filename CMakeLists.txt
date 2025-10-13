@@ -37,7 +37,7 @@ find_package(tf2_geometry_msgs REQUIRED)
 include_directories(include)
 
 # Add frame_transforms lib
-add_library(frame_transforms SHARED src/lib/frame_transforms.cpp)
+add_library(frame_transforms STATIC src/lib/frame_transforms.cpp)
 ament_target_dependencies(frame_transforms Eigen3 geometry_msgs sensor_msgs)
 target_include_directories(frame_transforms PUBLIC
 	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/${PROJECT_NAME}>

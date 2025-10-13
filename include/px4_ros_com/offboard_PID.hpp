@@ -140,6 +140,9 @@ private:
     double prev_roll=0.0;
     double prev_pitch=0.0;
     double prev_yaw=0.0;
+    double prev_roll_err=0.0;
+    double prev_pitch_err=0.0;
+    double prev_yaw_err=0.0;
     Eigen::Vector3d target_I = Eigen::Vector3d::Zero();
     const double THROTTLE_OFF = 0.0;
     const double THROTTLE_MEDIUM = 0.60;
@@ -159,6 +162,7 @@ private:
     bool run = true;//実行フラグ
     bool start_motor = false; //モータ始動フラグ
     bool stop = false;
+
     std::thread key_thread_;//キーボード入力用スレッド
     bool start_actuator = false; //アクチュエータ始動フラグ
 };

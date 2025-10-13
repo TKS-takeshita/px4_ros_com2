@@ -65,14 +65,14 @@ OffboardPIDControl::OffboardPIDControl() : rclcpp::Node("offboard_pid_control"){
 		}
         
         
-        if(start_actuator){
-            publish_offboard_actuator_control_mode();
-            publish_actuator_setpoint();
-        }
-        else{
-            publish_offboard_position_control_mode();
-            publish_motor_setpoint();
-        }
+        // if(start_actuator){
+        publish_offboard_actuator_control_mode();
+        publish_actuator_setpoint();
+        // }
+        // else{
+        //     publish_offboard_position_control_mode();
+        //     publish_motor_setpoint();
+        // }
         // publish_actuator_setpoint();
         if (offboard_setpoint_counter_ < 101) {
             offboard_setpoint_counter_++;
@@ -275,9 +275,13 @@ void OffboardPIDControl::controlLoop(){
     double roll_err  = wrapPi(target_roll  - current_roll);
 
     Eigen::Vector3d att_control;
-    att_control[0] = Kp_r* roll_err - Kd_r*(current_roll - prev_roll)*rate/1000 + Ki_r*target_I[0];
-    att_control[1] = Kp_p* pitch_err - Kd_p*(current_pitch - prev_pitch)*rate/1000 + Ki_p*target_I[1];
-    att_control[2] = Kp_y* yaw_err - Kd_y*(current_yaw - prev_yaw)*rate/1000 + Ki_y*target_I[2];//
+    att_control[0] = Kp_r* roll_err + Kd_r*(roll_err-prev_roll_err)*rate/1000 + Ki_r*target_I[0];
+    att_control[1] = Kp_p* pitch_err + Kd_p*(pitch_err-prev_pitch_err)*rate/1000 + Ki_p*target_I[1];
+    att_control[2] = Kp_y* yaw_err + Kd_y*(yaw_err-prev_yaw_err)*rate/1000 + Ki_y*target_I[2];//
+
+    prev_roll_err = roll_err;
+    prev_pitch_err = pitch_err;
+    prev_yaw_err = yaw_err;
 
     double U1 = throttle_thrust(thrust_magnitude);
     double U2 = throttle_thrust(att_control[0]);
@@ -298,16 +302,16 @@ void OffboardPIDControl::controlLoop(){
     prev_yaw = current_yaw;
 
     //実機
-    // new_speeds[0] = (U1-U4)/4.0 + U3/2.0;//F CW
-    // new_speeds[1] = (U1-U4)/4.0 - U3/2.0;//B CW
-    // new_speeds[2] = (U1+U4)/4.0 + U2/2.0;//R CCW
-    // new_speeds[3] = (U1+U4)/4.0 - U2/2.0;//L CCW
+    new_speeds[0] = (U1+U4)/4.0 - U3/2.0;//F CCW
+    new_speeds[1] = (U1+U4)/4.0 + U3/2.0;//B CCW
+    new_speeds[2] = (U1-U4)/4.0 - U2/2.0;//R CW
+    new_speeds[3] = (U1-U4)/4.0 + U2/2.0;//L CW
 
     // //simulator
-    new_speeds[0] = (U1+U4)/4.0 + U3/2.0;//F CCW
-    new_speeds[1] = (U1-U4)/4.0 + U2/2.0;//L CCW
-    new_speeds[2] = (U1+U4)/4.0 - U3/2.0;//B CW
-    new_speeds[3] = (U1-U4)/4.0 - U2/2.0;//R CW
+    // new_speeds[0] = (U1+U4)/4.0 + U3/2.0;//F CCW
+    // new_speeds[1] = (U1-U4)/4.0 + U2/2.0;//L CCW
+    // new_speeds[2] = (U1+U4)/4.0 - U3/2.0;//B CW
+    // new_speeds[3] = (U1-U4)/4.0 - U2/2.0;//R CW
     // new_speeds[0] = 0;//F CCW
     // new_speeds[1] = 0.95;//R CCW
     // new_speeds[2] = 0;//B CW

@@ -40,7 +40,6 @@
 #include "geometry_msgs/msg/twist_stamped.hpp"
 #include "px4_msgs/msg/vehicle_odometry.hpp"
 #include <px4_msgs/msg/vehicle_status.hpp>
-#include <rclcpp/rclcpp.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <nav_msgs/msg/odometry.hpp>

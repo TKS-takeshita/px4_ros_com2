@@ -361,8 +361,8 @@ void OffboardPIDControl::publish_offboard_actuator_control_mode(){
 	msg.velocity = false;
 	msg.acceleration = false;
 	msg.attitude = false;
-	msg.body_rate = false;
-	msg.direct_actuator = true;//
+	msg.body_rate = true;
+	msg.direct_actuator = false;//
 	msg.timestamp = steady_clock_.now().nanoseconds() / 1000;
 	offboard_control_mode_publisher_->publish(msg);
 }

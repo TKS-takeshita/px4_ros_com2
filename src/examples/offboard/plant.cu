@@ -95,6 +95,67 @@ __host__ __device__ void Plant::runge_kutta_4_method(float next[], float stt[], 
 
 // オイラー法数値積分
 __host__ __device__ void Plant::euler_method(float next[], float stt[], float diff[], float dt){
+    for(int j=0; j<this>DIM_STT; ++j){
+        next[j] = stt[j] + diff[j]*dt;
+    }
+    // クォータニオン正規化
+    const float q_norm = sqrtf(next[0]*next[0] + next[1]*next[1] + next[2]*next[2] + next[3]*next[3]);
+    next[0] /= q_norm;//q0
+    next[1] /= q_norm;//q1
+    next[2] /= q_norm;//q2
+    next[3] /= q_norm;//q3
+}
+
+// 状態量の微分値
+__host__ __device__ void Plant::calc_diff_stt(float stt_diff[]){
+    // 状態変数
+    const float q0 = stt[0];//クォータニオン 慣性座標系
+    const float q1 = stt[1];
+    const float q2 = stt[2];
+    const float q3 = stt[3];
+    const float wx = stt[4];//角速度　機体座標系
+    const float wy = stt[5];
+    const float wz = stt[6];
+    const float px = stt[7];//位置　慣性座標系
+    const float py = stt[8];
+    const float pz = stt[9];
+    const float vx = stt[10];//速度　慣性座標系
+    const float vy = stt[11];
+    const float vz = stt[12];
+
+    // パラメータ
+    const float MM = param[5];
+    const float LL = 0.5f;
+
+    const float Ixx = param[1];
+    const float Iyy = param[2];
+    const float Izz = param[3];
+
+    const float ug = param[0];//デカップリング入力バイアス
+    const float GG = 9.80665f;//重力加速度[m/s2]
+    const float u_diff_lim = 55.0f;
+    const float umax = 230.0f;
+    const float Tmax = param[4];
+    const float taumax = param[6];
+
+    //デカップリング処理
+    const float u_raw_cw1 = ug + in[0] - in[2] + in[3];
+    const float u_raw_cw2 = ug + in[0] + in[2] + in[3];
+    const float u_raw_ccw1 = ug + in[0] + in[1] - in[3];
+    const float u_raw_ccw2 = ug + in[0] - in[1] - in[3];
+
+    // 入力飽和
+    const float u_cw1 = (u_raw_cw1 >umax)*umax + (u_raw_cw1 <(ug-u_diff_lim))*(ug-u_diff_lim) + u_raw_cw1;
+    const float u_cw2 = (u_raw_cw2 >umax)*umax + (u_raw_cw2 <(ug-u_diff_lim))*(ug-u_diff_lim) + u_raw_cw2;
+    const float u_ccw1 = (u_raw_ccw1 >umax)*umax + (u_raw_ccw1 <(ug-u_diff_lim))*(ug-u_diff_lim) + u_raw_ccw1;
+    const float u_ccw2 = (u_raw_ccw2 >umax)*umax + (u_raw_ccw2 <(ug-u_diff_lim))*(ug-u_diff_lim) + u_raw_ccw2;
+
+    //計算用中間変数
+    const float inv_umax_2 = 1.0 / (umax*umax);
+}
+
+// オイラー法数値積分
+__host__ __device__ void Plant::euler_method(float next[], float stt[], float diff[], float dt){
 	for(int j=0; j<this->DIM_STT; j++)
 		next[j] = stt[j] + diff[j] * dt;
 

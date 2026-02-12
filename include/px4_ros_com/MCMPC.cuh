@@ -8,8 +8,8 @@
 
 class MCMPC{
     public:
-        MCMPC(float dt, float in_sdev[], float in_min[], float in_max[], float param[],
-              float stt_min[], flaot stt_max[], float cstR[], float cstQ[], float cstQf[],
+        MCMPC(float DT, float in_sdev[], float in_min[], float in_max[], float param[],
+              float stt_min[], float stt_max[], float cstR[], float cstQ[], float cstQf[],
               float CST_BARRIER, float LAMBDA, int ITERATION, enum solver SOLVER, float stt_ref[]);
         ~MCMPC();
 

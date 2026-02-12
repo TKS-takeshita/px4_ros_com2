@@ -6,6 +6,8 @@
 
 #include <Eigen/Dense>
 #include "MCMPC.cuh"
+#include "plant.cuh"
+#include "common.cuh"
 
 using namespace px4_ros_com::frame_transforms;
 using px4_msgs::msg::VehicleCommand;
@@ -38,6 +40,27 @@ private:
     bool odom_received = false;
     int offboard_counter = 0;
 
-    MCMPC mcmpc;
+    const float DT = 0.005f; // 200Hz
 
+    float PLANT_STT_INIT[DIMENTION_OF_STATE];
+    float PLANT_PARAM[DIMENTION_OF_PARAM];
+    float PLANT_INPUT_INIT[DIMENTION_OF_INPUT];
+    float PLANT_OUTPUT_INIT[DIMENTION_OF_OUTPUT];
+    
+    float INPUT_SDEV[DIMENTION_OF_INPUT];
+    float INPUT_MIN[DIMENTION_OF_INPUT];
+    float INPUT_MAX[DIMENTION_OF_INPUT];
+    float STATE_MIN[DIMENTION_OF_STATE];
+    float STATE_MAX[DIMENTION_OF_STATE];
+    float MCMPC_COST_R[DIMENTION_OF_INPUT];
+    float MCMPC_COST_Q[DIMENTION_OF_STATE];
+    float MCMPC_COST_QF[DIMENTION_OF_STATE];
+    float MCMPC_COST_BARRIER;
+    float MCMPC_LAMBDA;
+    int MCMPC_ITERATION;
+
+    enum solver MCMPC_SOLVER;
+    float MCMPC_STATE_REF[DIMENTION_OF_STATE];
+
+    MCMPC mcmpc;
 };

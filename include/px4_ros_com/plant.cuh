@@ -2,6 +2,7 @@
 #define PLANT_CUH
 
 #include "plant.cuh"
+#include "px4_ros_com/common.cuh"
 
 class Plant{
     public:

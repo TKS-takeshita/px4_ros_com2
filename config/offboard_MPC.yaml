@@ -1,0 +1,10 @@
+offboard_mpc_control:
+  ros__parameters:
+    MM : 2.5
+    LL : 0.255468
+    Ixx : 4.316e-2
+    Iyy : 4.237e-2
+    Izz : 6.06e-2
+    b   : 1.09e-5
+    d   : 1.52e-7
+    

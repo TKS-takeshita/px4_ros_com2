@@ -4,6 +4,24 @@ OffboardMPC::OffboardMPC()
     : Node("offboard_mpc"),
       mcmpc()
 {
+    // Initialize MPC parameters
+    INPUT_SDEV = {1.0f, 0.4f, 0.4f, 0.125f};
+    INPUT_MIN = {-55, -1e3f, -1e3f, -1e3f};
+    INPUT_MAX = {55f, 1e3f, 1e3f, 1e3f};
+    STATE_MIN = {-1E4, -1E4, -1E4, -1E4, -1E4, -1E4, -1E4, -1E4, -1E4, -1E4, -1E4, -1E4, -1E4};
+    STATE_MAX = {1E4, 1E4, 1E4, 1E4, 1E4, 1E4, 1E4, 1E4, 1E4, 1E4, 1E4, 1E4, 1E4};
+    MCMPC_COST_R = {0.01, 0.001f, 0.001f, 0.01f};
+    MCMPC_COST_Q = {0, 150, 150, 36, 36, 9, 3, 3, 5, 3, 3, 5};
+    MCMPC_COST_QF = {0, 150, 150, 150, 36, 36, 9, 3, 3, 5, 3, 3, 5};
+    MCMPC_COST_BARRIER = 1e30;
+    MCMPC_LAMBDA = 5000;
+    MCMPC_ITERATION = 3;
+    MCMPC_SOLVER = rk4;
+    MCMPC_STATE_REF = {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    mcmpc = MCMPC(DT, INPUT_SDEV, INPUT_MIN, INPUT_MAX, PLANT_PARAM,
+                   STATE_MIN, STATE_MAX, MCMPC_COST_R, MCMPC_COST_Q, MCMPC_COST_QF,
+                   MCMPC_COST_BARRIER, MCMPC_LAMBDA, MCMPC_ITERATION, MCMPC_SOLVER, MCMPC_STATE_REF);
+
     offboard_control_mode = this->create_publisher<px4_msgs::msg::OffboardControlMode>(
         "/fmu/in/offboard_control_mode", 10);
 
@@ -75,9 +93,9 @@ void OffboardMPC::publisho_offboard_control_mode()
     msg.velocity = false;
     msg.acceleration = false;
     msg.attitude = false;
-    msg.body_rate = false;
+    msg.body_rate = true;
     msg.direct_actuator = false; //
-    msg.thrust_and_torque = true;
+    msg.thrust_and_torque = false;
     msg.timestamp = steady_clock_.now().nanoseconds() / 1000;
     offboard_control_mode->publish(msg);
 }

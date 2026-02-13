@@ -1,8 +1,9 @@
 #include <rclcpp/rclcpp.hpp>
 #include <px4_msgs/msg/offboard_control_mode.hpp>
 #include <px4_msgs/msg/vehicle_command.hpp>
-#include <px4_msgs/msg/vehicle_angular_velocity.hpp>
+#include <px4_msgs/msg/vehicle_rate_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_odometry.hpp>
+#include <tf2/LinearMath/Quaternion.h>
 
 #include <Eigen/Dense>
 #include "MCMPC.cuh"
@@ -23,13 +24,16 @@ private:
     void control_loop();
     void publish_offboard_avel(Eigen::Vector3d control_input);
     void publish_vehicle_command(uint16_t command, float param1 = 0.0, float param2 = 0.0);
-    void VehicleCallback(px4_msgs::msg::VehicleOdometry::ConstSharedPtr msg);
+    // void VehicleCallback(px4_msgs::msg::VehicleOdometry::ConstSharedPtr msg);
+    void FastLioCallback(nav_msgs::msg::Odometry::SharedPtr msg);
+    void IMUCallback(sensor_msgs::msg::Imu::SharedPtr msg);
     void publish_offboard_control_mode();
 
     rclcpp::Publisher<px4_msgs::msg::OffboardControlMode>::SharedPtr offboard_control_mode;
     rclcpp::Publisher<px4_msgs::msg::VehicleAngularVelocity>::SharedPtr angular_vel_pub;
     rclcpp::Publisher<px4_msgs::msg::VehicleCommand>::SharedPtr vehicle_cmd_pub;
-    rclcpp::Subscription<px4_msgs::msg::VehicleOdometry>::SharedPtr odom_sub;
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub;
+    rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr pose_sub;
     rclcpp::TimerBase::SharedPtr timer;
 
     Eigen::Vector3d current_position{Eigen::Vector3d::Zero()};
@@ -61,6 +65,9 @@ private:
 
     enum solver MCMPC_SOLVER;
     float MCMPC_STATE_REF[DIMENTION_OF_STATE];
+
+    float current_state[DIMENTION_OF_STATE];
+    float current_ref[DIMENTION_OF_STATE];
 
     MCMPC mcmpc;
 };

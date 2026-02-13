@@ -123,8 +123,8 @@ __host__ __device__ void Plant::calc_diff_stt(float stt_diff[], float stt[], flo
 	const float vy = stt[11]; // 速度           世界座標系
 	const float vz = stt[12]; // 速度           世界座標系
     // パラメータ
-    const float MM = param[5];// 機体質量[kg]
-	const float LL = 0.25548f;// アーム長[m]
+    const float MM = param[6];// 機体質量[kg]
+	const float LL = param[7];// アーム長[m]0.25548
 
     const float Ix = param[1];
 	const float Iy = param[2];
@@ -134,10 +134,12 @@ __host__ __device__ void Plant::calc_diff_stt(float stt_diff[], float stt[], flo
 	const float umin = 439.82293f;//最小回転速度[rad/s]
     const float umax = 1120.81554f;//最大回転速度[rad/s]
     const float Tmax = param[4];// 最大推力[N]
-    const float taumax = param[6]; // 最大トルク[Nm]
+    const float taumax = param[5]; // 最大トルク[Nm]
     const float inv_sqrt2 = 0.70710678f;
     const float thrust_coef = 1.09e-5f; // 推力係数[N・s^2]
     const float torque_coef = 1.52e-7f; // トルク係数[Nm・s^2]
+
+    //in[0] : vz, in[1] : vwx, in[2] : vwy, in[3] : vwz (機体座標系)
 
     const float u_raw_cw1  = ug + in[0] + (in[1] - in[2])*inv_sqrt2 + in[3];
 	const float u_raw_cw2  = ug + in[0] - (in[1] - in[2])*inv_sqrt2 + in[3];

@@ -31,9 +31,14 @@ OffboardMPC::OffboardMPC()
     vehicle_cmd_pub = this->create_publisher<px4_msgs::msg::VehicleCommand>(
         "/fmu/in/vehicle_command", 10);
 
-    odom_sub = this->create_subscription<px4_msgs::msg::VehicleOdometry>(
-        "/fmu/out/vehicle_odometry", 10,
-        std::bind(&OffboardMPC::VehicleCallback, this, std::placeholders::_1));
+    odom_sub = this->create_subscription<nav_msgs::msg::Odometry>(
+        "/Odometry", 10,
+        std::bind(&OffboardMPC::FastLioCallback, this, std::placeholders::_1));
+
+    pose_sub = this->create_subscription<sensor_msgs::msg::Imu>(
+        "imu/data", 10, 
+        std::bind(&OffboardMPC::IMUCallback, this, std::placeholders::_1);
+    )
 
     publish_offboard_control_mode();
     auto timer_callback = [this]() -> void {
@@ -50,24 +55,35 @@ OffboardMPC::OffboardMPC()
     RCLCPP_INFO(this->get_logger(), "Offboard MPC Node has been started.");
 }
 
-void OffboardMPC::VehicleCallback(px4_msgs::msg::VehicleOdometry::ConstSharedPtr msg)
-{
-    //FRD frame 
-    // 慣性系
-    current_position.x() = msg->position[0];
-    current_position.y() = msg->position[1];
-    current_position.z() = msg->position[2];
-
-    current_velocity.x() = msg->velocity[0];
-    current_velocity.y() = msg->velocity[1];
-    current_velocity.z() = msg->velocity[2];
-
-    current_orientation.w() = msg->q[0];
-    current_orientation.x() = msg->q[1];
-    current_orientation.y() = msg->q[2];
-    current_orientation.z() = msg->q[3];
+void OffboardMPC::FastLioCallback(nav_msgs::msg::Odometry::SharedPtr &msg){
+    current_position.x() = msg->pose.pose.position.x;
+    current_position.y() = msg->pose.pose.position.y;
+    current_position.z() = msg->pose.pose.position.z;
 
     odom_received = true;
+}
+
+void OffboardMPC::CalcStateRef(){
+    tf2::Quaternion q;
+    float roll = 0.0;//[rad]
+    float pitch = 0.0;//[rad]
+    float yaw = 0.0;//[rad]
+    q.setRPY(roll, pitch, yaw);
+    q.normalize();
+
+    double w = q.w();
+    double x = q.x();
+    double y = q.y();
+    double z = q.z();
+
+    current_ref = [w, x, y, z, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+}
+
+void OffboardMPC::IMUCallback(sensor_msgs::msg::Imu::SharedPtr &msg){
+    current_orientation.w() = msg->orientation.w;
+    current_orientation.x() = msg->orientation.x;
+    current_orientation.y() = msg->orientation.y;
+    current_orientation.z() = msg->orientation.z;
 }
 
 void OffboardMPC::control_loop()
@@ -77,12 +93,14 @@ void OffboardMPC::control_loop()
         RCLCPP_WARN(this->get_logger(), "Waiting for odometry...");
         return;
     }
-    MCMPCState state;
-    state.position = current_position;
-    state.velocity = current_velocity;
-    state.orientation = current_orientation;
 
-    Eigen::Vector3d control_input =  mcmpc.computeAngularVelocity(state);
+    float control_input[DIMENTION_OF_INPUT];
+    
+    float current_ref[DIMENTION_OF_STATE];
+    mcmpc.get_opt_in(control_input, current_state, current_ref);
+    
+
+    Eigen::Vector4d control_input =  mcmpc.computeAngularVelocity(state);
     publish_offboard_avel(control_input);
 }
 
@@ -100,13 +118,17 @@ void OffboardMPC::publisho_offboard_control_mode()
     offboard_control_mode->publish(msg);
 }
 
-void OffboardMPC::publish_offboard_avel(Eigen::Vector3d control_input)
+void OffboardMPC::publish_offboard_avel(Eigen::Vector4d control_input)
 {
-    px4_msgs::msg::VehicleAngularVelocity msg{};
+    px4_msgs::msg::VehicleRateSetpoint msg{};
     msg.timestamp = steady_clock_.now().nanoseconds() / 1000;
-    msg.xyz[0] = control_input[0];
-    msg.xyz[1] = control_input[1];
-    msg.xyz[2] = control_input[2];
+    //FLU frame から FRD frameへ変換
+    msg.roll = control_input[0];
+    msg.pitch = -control_input[1];
+    msg.yaw = -control_input[2];
+
+    msg.thrust_body = [0, 0, 0, control_input[3]]
+
     angular_vel_pub->publish(msg);
 }
 

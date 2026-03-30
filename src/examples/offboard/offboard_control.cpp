@@ -43,7 +43,7 @@ public:
 
 		target_x_ = 0.0f;
 		target_y_ = 0.0f;
-		target_z_ = -1.5f;
+		target_z_ = 0.0f;
 		target_yaw_ = 0.0f;
 
 		prev_a_button_ = 0;
@@ -55,8 +55,6 @@ public:
 			// PX4 Offboard維持のため常に送る
 			publish_offboard_control_mode();
 
-			// 緊急停止中は setpoint は一応送ってもよいが、
-			// ここでは送らず disarm 状態維持を優先
 			if (!emergency_stop_) {
 				publish_trajectory_setpoint();
 			}
@@ -75,7 +73,7 @@ public:
 			}
 		};
 
-		timer_ = this->create_wall_timer(100ms, timer_callback);
+		timer_ = this->create_wall_timer(10ms, timer_callback);
 	}
 
 	void arm()
@@ -183,9 +181,10 @@ private:
 		int a_button = (msg->buttons.size() > 0) ? msg->buttons[0] : 0;
 		int b_button = (msg->buttons.size() > 1) ? msg->buttons[1] : 0;
 		int x_button = (msg->buttons.size() > 2) ? msg->buttons[2] : 0;
+		int y_button = (msg->buttons.size() > 3) ? msg->buttons[3] : 0;
 
 		// Aボタン立ち上がりで arm/disarm 切り替え
-		if (a_button == 1 && prev_a_button_ == 0) {
+		if (a_button == 1) {
 			if (!is_armed_) {
 				emergency_stop_ = false;
 
@@ -195,30 +194,27 @@ private:
 					target_y_ = current_y_;
 					target_z_ = current_z_;
 					target_yaw_ = current_yaw_;
-				} else {
-					target_x_ = 0.0f;
-					target_y_ = 0.0f;
-					target_z_ = -1.5f;
-					target_yaw_ = 0.0f;
 				}
-
 				arm_request_ = true;
 				RCLCPP_INFO(this->get_logger(), "A pressed -> request ARM + OFFBOARD");
 			} else {
-				disarm();
-				RCLCPP_INFO(this->get_logger(), "A pressed -> DISARM");
+				target_x_ = 0.0f;
+				target_y_ = 0.0f;
+				target_z_ = -1.5f;
+				target_yaw_ = 0.0f;
+				
 			}
 		}
 
 		// Bボタンで緊急停止（即disarm）
-		if (b_button == 1 && prev_b_button_ == 0) {
+		if (b_button == 1) {
 			emergency_stop_ = true;
 			disarm();
 			RCLCPP_WARN(this->get_logger(), "B pressed -> EMERGENCY STOP / DISARM");
 		}
 
 		// Xボタンで現在位置を目標位置として再セット（その場ホールド）
-		if (x_button == 1 && prev_x_button_ == 0) {
+		if (x_button == 1) {
 			if (got_local_pos_) {
 				target_x_ = current_x_;
 				target_y_ = current_y_;
@@ -228,9 +224,16 @@ private:
 			}
 		}
 
-		prev_a_button_ = a_button;
-		prev_b_button_ = b_button;
-		prev_x_button_ = x_button;
+		// Yボタンで離陸
+		if(y_button == 1){
+			if(got_local_pos_){
+				target_x_ = current_x_;
+				target_y_ = current_y_;
+				target_z_ = 0.0;
+				target_yaw_ = current_yaw_;
+				RCLCPP_INFO(this->get_logger(), "Y pressed -> takeoff");
+			}
+		}
 	}
 };
 

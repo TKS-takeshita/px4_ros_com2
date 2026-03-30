@@ -1,52 +1,15 @@
-/****************************************************************************
- *
- * Copyright 2020 PX4 Development Team. All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- * 1. Redistributions of source code must retain the above copyright notice, this
- * list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright notice,
- * this list of conditions and the following disclaimer in the documentation
- * and/or other materials provided with the distribution.
- *
- * 3. Neither the name of the copyright holder nor the names of its contributors
- * may be used to endorse or promote products derived from this software without
- * specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- ****************************************************************************/
-
-/**
- * @brief Offboard control example
- * @file offboard_control.cpp
- * @addtogroup examples
- * @author Mickey Cowden <info@cowden.tech>
- * @author Nuno Marques <nuno.marques@dronesolutions.io>
- */
-
 #include <px4_msgs/msg/offboard_control_mode.hpp>
 #include <px4_msgs/msg/trajectory_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_command.hpp>
-#include <px4_msgs/msg/vehicle_control_mode.hpp>
+#include <px4_msgs/msg/vehicle_local_position.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/joy.hpp>
 #include <stdint.h>
 
 #include <chrono>
 #include <iostream>
+#include <atomic>
+#include <algorithm>
 
 using namespace std::chrono;
 using namespace std::chrono_literals;
@@ -57,37 +20,78 @@ class OffboardControl : public rclcpp::Node
 public:
 	OffboardControl() : Node("offboard_control")
 	{
+		offboard_control_mode_publisher_ =
+			this->create_publisher<OffboardControlMode>("/fmu/in/offboard_control_mode", 10);
+		trajectory_setpoint_publisher_ =
+			this->create_publisher<TrajectorySetpoint>("/fmu/in/trajectory_setpoint", 10);
+		vehicle_command_publisher_ =
+			this->create_publisher<VehicleCommand>("/fmu/in/vehicle_command", 10);
 
-		offboard_control_mode_publisher_ = this->create_publisher<OffboardControlMode>("/fmu/in/offboard_control_mode", 10);
-		trajectory_setpoint_publisher_ = this->create_publisher<TrajectorySetpoint>("/fmu/in/trajectory_setpoint", 10);
-		vehicle_command_publisher_ = this->create_publisher<VehicleCommand>("/fmu/in/vehicle_command", 10);
+		joy_subscriber_ = this->create_subscription<sensor_msgs::msg::Joy>(
+			"/joy", 10,
+			std::bind(&OffboardControl::joy_callback, this, std::placeholders::_1));
+
+		local_pos_subscriber_ = this->create_subscription<VehicleLocalPosition>(
+			"/fmu/in/vehicle_visual_odometry", 10,
+			std::bind(&OffboardControl::local_position_callback, this, std::placeholders::_1));
 
 		offboard_setpoint_counter_ = 0;
+		is_armed_ = false;
+		offboard_enabled_ = false;
+		emergency_stop_ = false;
+		got_local_pos_ = false;
+
+		target_x_ = 0.0f;
+		target_y_ = 0.0f;
+		target_z_ = -1.5f;
+		target_yaw_ = 0.0f;
+
+		prev_a_button_ = 0;
+		prev_b_button_ = 0;
+		prev_x_button_ = 0;
 
 		auto timer_callback = [this]() -> void {
 
-			if (offboard_setpoint_counter_ == 10) {
-				// Change to Offboard mode after 10 setpoints
-				this->publish_vehicle_command(VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1, 6);
+			// PX4 Offboard維持のため常に送る
+			publish_offboard_control_mode();
 
-				// Arm the vehicle
-				this->arm();
+			// 緊急停止中は setpoint は一応送ってもよいが、
+			// ここでは送らず disarm 状態維持を優先
+			if (!emergency_stop_) {
+				publish_trajectory_setpoint();
 			}
 
-			// offboard_control_mode needs to be paired with trajectory_setpoint
-			publish_offboard_control_mode();
-			publish_trajectory_setpoint();
-
-			// stop the counter after reaching 11
-			if (offboard_setpoint_counter_ < 11) {
+			// Offboardに入るための最初の数回のセットポイント送信
+			if (offboard_setpoint_counter_ < 20) {
 				offboard_setpoint_counter_++;
 			}
+
+			// arm要求が来ていてまだoffboard化していないなら実行
+			if (arm_request_ && !offboard_enabled_ && offboard_setpoint_counter_ >= 10) {
+				this->publish_vehicle_command(VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1, 6);
+				this->arm();
+				offboard_enabled_ = true;
+				arm_request_ = false;
+			}
 		};
+
 		timer_ = this->create_wall_timer(100ms, timer_callback);
 	}
 
-	void arm();
-	void disarm();
+	void arm()
+	{
+		publish_vehicle_command(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0);
+		is_armed_ = true;
+		RCLCPP_INFO(this->get_logger(), "Arm command sent");
+	}
+
+	void disarm()
+	{
+		publish_vehicle_command(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 0.0);
+		is_armed_ = false;
+		offboard_enabled_ = false;
+		RCLCPP_WARN(this->get_logger(), "Disarm command sent");
+	}
 
 private:
 	rclcpp::TimerBase::SharedPtr timer_;
@@ -96,85 +100,139 @@ private:
 	rclcpp::Publisher<TrajectorySetpoint>::SharedPtr trajectory_setpoint_publisher_;
 	rclcpp::Publisher<VehicleCommand>::SharedPtr vehicle_command_publisher_;
 
-	std::atomic<uint64_t> timestamp_;   //!< common synced timestamped
+	rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_subscriber_;
+	rclcpp::Subscription<VehicleLocalPosition>::SharedPtr local_pos_subscriber_;
 
-	uint64_t offboard_setpoint_counter_;   //!< counter for the number of setpoints sent
+	uint64_t offboard_setpoint_counter_;
 
-	void publish_offboard_control_mode();
-	void publish_trajectory_setpoint();
-	void publish_vehicle_command(uint16_t command, float param1 = 0.0, float param2 = 0.0);
+	bool is_armed_;
+	bool offboard_enabled_;
+	bool emergency_stop_;
+	bool got_local_pos_;
+	bool arm_request_{false};
+
+	float target_x_;
+	float target_y_;
+	float target_z_;
+	float target_yaw_;
+
+	float current_x_{0.0f};
+	float current_y_{0.0f};
+	float current_z_{0.0f};
+	float current_yaw_{0.0f};
+
+	int prev_a_button_;
+	int prev_b_button_;
+	int prev_x_button_;
+
+	void publish_offboard_control_mode()
+	{
+		OffboardControlMode msg{};
+		msg.position = true;
+		msg.velocity = false;
+		msg.acceleration = false;
+		msg.attitude = false;
+		msg.body_rate = false;
+		msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
+		offboard_control_mode_publisher_->publish(msg);
+	}
+
+	void publish_trajectory_setpoint()
+	{
+		TrajectorySetpoint msg{};
+		msg.position = {target_x_, target_y_, target_z_};
+		msg.yaw = target_yaw_;
+		msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
+		trajectory_setpoint_publisher_->publish(msg);
+	}
+
+	void publish_vehicle_command(uint16_t command, float param1 = 0.0, float param2 = 0.0)
+	{
+		VehicleCommand msg{};
+		msg.param1 = param1;
+		msg.param2 = param2;
+		msg.command = command;
+		msg.target_system = 1;
+		msg.target_component = 1;
+		msg.source_system = 1;
+		msg.source_component = 1;
+		msg.from_external = true;
+		msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
+		vehicle_command_publisher_->publish(msg);
+	}
+
+	void local_position_callback(const px4_msgs::msg::VehicleLocalPosition::ConstSharedPtr msg )
+	{
+		if (!msg->xy_valid || !msg->z_valid) {
+			return;
+		}
+
+		current_x_ = msg->x;
+		current_y_ = msg->y;
+		current_z_ = msg->z;
+		current_yaw_ = msg->heading;
+		got_local_pos_ = true;
+	}
+
+	void joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg)
+	{
+		// joy_nodeの一般的な割当例
+		// A = buttons[0], B = buttons[1], X = buttons[2]
+		// 実機で /joy を確認して必要なら番号変更
+
+		int a_button = (msg->buttons.size() > 0) ? msg->buttons[0] : 0;
+		int b_button = (msg->buttons.size() > 1) ? msg->buttons[1] : 0;
+		int x_button = (msg->buttons.size() > 2) ? msg->buttons[2] : 0;
+
+		// Aボタン立ち上がりで arm/disarm 切り替え
+		if (a_button == 1 && prev_a_button_ == 0) {
+			if (!is_armed_) {
+				emergency_stop_ = false;
+
+				// 初回arm時に現在位置を目標値として保持
+				if (got_local_pos_) {
+					target_x_ = current_x_;
+					target_y_ = current_y_;
+					target_z_ = current_z_;
+					target_yaw_ = current_yaw_;
+				} else {
+					target_x_ = 0.0f;
+					target_y_ = 0.0f;
+					target_z_ = -1.5f;
+					target_yaw_ = 0.0f;
+				}
+
+				arm_request_ = true;
+				RCLCPP_INFO(this->get_logger(), "A pressed -> request ARM + OFFBOARD");
+			} else {
+				disarm();
+				RCLCPP_INFO(this->get_logger(), "A pressed -> DISARM");
+			}
+		}
+
+		// Bボタンで緊急停止（即disarm）
+		if (b_button == 1 && prev_b_button_ == 0) {
+			emergency_stop_ = true;
+			disarm();
+			RCLCPP_WARN(this->get_logger(), "B pressed -> EMERGENCY STOP / DISARM");
+		}
+
+		// Xボタンで現在位置を目標位置として再セット（その場ホールド）
+		if (x_button == 1 && prev_x_button_ == 0) {
+			if (got_local_pos_) {
+				target_x_ = current_x_;
+				target_y_ = current_y_;
+				target_z_ = current_z_;
+				target_yaw_ = current_yaw_;
+				RCLCPP_INFO(this->get_logger(), "X pressed -> hold current position");
+			}
+		}
+
+		prev_a_button_ = a_button;
+		prev_b_button_ = b_button;
+		prev_x_button_ = x_button;
+	}
 };
-
-/**
- * @brief Send a command to Arm the vehicle
- */
-void OffboardControl::arm()
-{
-	publish_vehicle_command(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0);
-
-	RCLCPP_INFO(this->get_logger(), "Arm command send");
-}
-
-/**
- * @brief Send a command to Disarm the vehicle
- */
-void OffboardControl::disarm()
-{
-	publish_vehicle_command(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 0.0);
-
-	RCLCPP_INFO(this->get_logger(), "Disarm command send");
-}
-
-/**
- * @brief Publish the offboard control mode.
- *        For this example, only position and altitude controls are active.
- */
-void OffboardControl::publish_offboard_control_mode()
-{
-	OffboardControlMode msg{};
-	msg.position = true;
-	msg.velocity = false;
-	msg.acceleration = false;
-	msg.attitude = false;
-	msg.body_rate = false;
-	msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
-	offboard_control_mode_publisher_->publish(msg);
-}
-
-/**
- * @brief Publish a trajectory setpoint
- *        For this example, it sends a trajectory setpoint to make the
- *        vehicle hover at 5 meters with a yaw angle of 180 degrees.
- */
-void OffboardControl::publish_trajectory_setpoint()
-{
-	TrajectorySetpoint msg{};
-	msg.position = {0.0, 0.0, -5.0};
-	msg.yaw = -3.14; // [-PI:PI]
-	msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
-	trajectory_setpoint_publisher_->publish(msg);
-}
-
-/**
- * @brief Publish vehicle commands
- * @param command   Command code (matches VehicleCommand and MAVLink MAV_CMD codes)
- * @param param1    Command parameter 1
- * @param param2    Command parameter 2
- */
-void OffboardControl::publish_vehicle_command(uint16_t command, float param1, float param2)
-{
-	VehicleCommand msg{};
-	msg.param1 = param1;
-	msg.param2 = param2;
-	msg.command = command;
-	msg.target_system = 1;
-	msg.target_component = 1;
-	msg.source_system = 1;
-	msg.source_component = 1;
-	msg.from_external = true;
-	msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
-	vehicle_command_publisher_->publish(msg);
-}
 
 int main(int argc, char *argv[])
 {
@@ -182,7 +240,6 @@ int main(int argc, char *argv[])
 	setvbuf(stdout, NULL, _IONBF, BUFSIZ);
 	rclcpp::init(argc, argv);
 	rclcpp::spin(std::make_shared<OffboardControl>());
-
 	rclcpp::shutdown();
 	return 0;
 }

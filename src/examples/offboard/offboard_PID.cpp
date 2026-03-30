@@ -20,37 +20,13 @@ OffboardPIDControl::OffboardPIDControl() : rclcpp::Node("offboard_pid_control"){
     "/fmu/in/vehicle_visual_odometry",                 // 読み取りは out 側
     rclcpp::SensorDataQoS(),
     std::bind(&OffboardPIDControl::VehicleCallback, this, std::placeholders::_1));
-    const std::string dir = "/home/ros2/ws_sensor_combined/src/px4_ros_com/csv/";
-    std::filesystem::create_directories(dir);
-    const std::string pid_log = dir + "pid_log.csv";
-    csv_.open(pid_log, std::ios::out);
-    if(!csv_.is_open()){
-        RCLCPP_ERROR(this->get_logger(), "Could not open file: %s", pid_log.c_str());
-    }
-    else{
-        RCLCPP_INFO(this->get_logger(), "Opened file: %s", pid_log.c_str());
-        csv_    << "timestamp_us,"
-                << "yaw_err,"
-                << "pitch_err,"
-                << "roll_err,"
-                << "curr_yaw,"
-                << "curr_pitch,"
-                << "curr_roll,"
-                << "target_yaw,"
-                << "target_pitch,"
-                << "target_roll,"
-                << "att_0,"
-                << "att_1,"
-                << "att_2,"
-                << "U1,"
-                << "U2,"
-                << "U3,"
-                << "U4,"
-                << "n0,"
-                << "n1,"
-                << "n2,"
-                << "n3\n";
-    }
+    // const std::string dir = "/home/ros2/ws_sensor_combined/src/px4_ros_com/csv/";
+    // std::filesystem::create_directories(dir);
+    // const std::string pid_log = dir + "pid_log.csv";
+    // csv_.open(pid_log, std::ios::out);
+    // if(!csv_.is_open()){
+    //     RCLCPP_ERROR(this->get_logger(), "Could not open file: %s", pid_log.c_str());
+    // }
     auto timer_callback = [this]() -> void {
         if(!start_motor){
             return;
@@ -320,27 +296,6 @@ void OffboardPIDControl::controlLoop(){
         if (new_speeds[i] > THROTTLE_FULL) new_speeds[i] = THROTTLE_FULL;
     }
 
-    csv_ << steady_clock_.now().nanoseconds() / 1000 << ","
-          << yaw_err << ","
-          << pitch_err << ","
-          << roll_err << ","
-          << current_yaw << ","
-          << current_pitch << ","
-          << current_roll << ","
-          << target_yaw << ","
-          << target_pitch << ","
-          << target_roll << ","
-          << att_control[0] << ","
-          << att_control[1] << ","
-          << att_control[2] << ","
-          << U1 << ","
-          << U2 << ","
-          << U3 << ","
-          << U4 << ","
-          << new_speeds[0] << ","
-          << new_speeds[1] << ","
-          << new_speeds[2] << ","
-          << new_speeds[3] << "\n";
 }
 
 void OffboardPIDControl::publish_offboard_position_control_mode(){

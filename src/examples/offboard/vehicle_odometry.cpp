@@ -44,37 +44,37 @@ public:
         std::tm tm{};
         localtime_r(&tt, &tm);
 
-        const std::string px4_fname  = dir + "px4_odom.csv";
-        const std::string slam_fname = dir + "slam_odom.csv";
-        const std::string imu_fname = dir + "madgwick_imu.csv";
+        // const std::string px4_fname  = dir + "px4_odom.csv";
+        // const std::string slam_fname = dir + "slam_odom.csv";
+        // const std::string imu_fname = dir + "madgwick_imu.csv";
 
-        csv_.open(px4_fname,  std::ios::out);
-        csv_slam_.open(slam_fname, std::ios::out);
-        csv_imu.open(imu_fname, std::ios::out);
+        // csv_.open(px4_fname,  std::ios::out);
+        // csv_slam_.open(slam_fname, std::ios::out);
+        // csv_imu.open(imu_fname, std::ios::out);
 
-        if (!csv_) {
-            RCLCPP_ERROR(this->get_logger(), "Failed to open CSV file: %s", px4_fname.c_str());
-        } else {
-            RCLCPP_INFO(this->get_logger(), "Logging px4_odom to: %s", px4_fname.c_str());
-            csv_ << "timestamp_us,px,py,pz,qw,qx,qy,qz,yaw_imu,yaw_slam\n";
-            csv_.flush();
-        }
+        // if (!csv_) {
+        //     RCLCPP_ERROR(this->get_logger(), "Failed to open CSV file: %s", px4_fname.c_str());
+        // } else {
+        //     RCLCPP_INFO(this->get_logger(), "Logging px4_odom to: %s", px4_fname.c_str());
+        //     csv_ << "timestamp_us,px,py,pz,qw,qx,qy,qz,yaw_imu,yaw_slam\n";
+        //     csv_.flush();
+        // }
 
-        if (!csv_slam_) {
-            RCLCPP_ERROR(this->get_logger(), "Failed to open CSV_SLAM file: %s", slam_fname.c_str());
-        } else {
-            RCLCPP_INFO(this->get_logger(), "Logging slam_odom to: %s", slam_fname.c_str());
-            csv_slam_ << "timestamp_us,px,py,pz,qw,qx,qy,qz\n";
-            csv_slam_.flush();
-        }
+        // if (!csv_slam_) {
+        //     RCLCPP_ERROR(this->get_logger(), "Failed to open CSV_SLAM file: %s", slam_fname.c_str());
+        // } else {
+        //     RCLCPP_INFO(this->get_logger(), "Logging slam_odom to: %s", slam_fname.c_str());
+        //     csv_slam_ << "timestamp_us,px,py,pz,qw,qx,qy,qz\n";
+        //     csv_slam_.flush();
+        // }
 
-        if (!csv_imu) {
-            RCLCPP_ERROR(this->get_logger(), "Failed to open CSV_IMU file: %s", imu_fname.c_str());
-        } else {
-            RCLCPP_INFO(this->get_logger(), "Logging slam_odom to: %s", imu_fname.c_str());
-            csv_imu << "timestamp_us,qw,qx,qy,qz,avx,avy,avz,ax,ay,az\n";
-            csv_imu.flush();
-        }
+        // if (!csv_imu) {
+        //     RCLCPP_ERROR(this->get_logger(), "Failed to open CSV_IMU file: %s", imu_fname.c_str());
+        // } else {
+        //     RCLCPP_INFO(this->get_logger(), "Logging slam_odom to: %s", imu_fname.c_str());
+        //     csv_imu << "timestamp_us,qw,qx,qy,qz,avx,avy,avz,ax,ay,az\n";
+        //     csv_imu.flush();
+        // }
 
 
         // FAST-LIO の Odometry を購読
@@ -140,9 +140,9 @@ private:
     Covariance3d cov_pos_px4;
     Covariance3d cov_rot_px4;
     std::mutex vel_mutex;
-    std::ofstream csv_;
-    std::ofstream csv_slam_;
-    std::ofstream csv_imu;
+    // std::ofstream csv_;
+    // std::ofstream csv_slam_;
+    // std::ofstream csv_imu;
     Eigen::Matrix3d FLU2FRD_world = Eigen::AngleAxisd(M_PI, Eigen::Vector3d::UnitX()).toRotationMatrix();
     Eigen::Quaterniond pre_imu_pose = Eigen::Quaterniond::Identity();
     Eigen::Quaterniond pre_slam_pose = Eigen::Quaterniond::Identity();
@@ -289,26 +289,26 @@ private:
         px4_odom.quality = 100;
         vehicle_odom_pub_->publish(px4_odom);
 
-        csv_ << px4_odom.timestamp << ","
-             << px4_odom.position[0] << ","
-             << px4_odom.position[1] << ","
-             << px4_odom.position[2] << ","
-             << px4_odom.q[0] << "," << px4_odom.q[1] << "," << px4_odom.q[2] << "," << px4_odom.q[3] << ","
-             << yaw_imu << "," << yaw_slam
-             << "\n";
+        // csv_ << px4_odom.timestamp << ","
+        //      << px4_odom.position[0] << ","
+        //      << px4_odom.position[1] << ","
+        //      << px4_odom.position[2] << ","
+        //      << px4_odom.q[0] << "," << px4_odom.q[1] << "," << px4_odom.q[2] << "," << px4_odom.q[3] << ","
+        //      << yaw_imu << "," << yaw_slam
+        //      << "\n";
 
-        csv_imu << px4_odom.timestamp << ","
-                << msg->orientation.w << ","
-                << msg->orientation.x << ","
-                << msg->orientation.y << ","
-                << msg->orientation.z << ","
-                << avel_w_frd.x() << ","
-                << avel_w_frd.y() << ","
-                << avel_w_frd.z() << ","
-                << a_w_flu.x() << ","
-                << a_w_flu.y() << ","
-                << a_w_flu.z()
-                << "\n";
+        // csv_imu << px4_odom.timestamp << ","
+        //         << msg->orientation.w << ","
+        //         << msg->orientation.x << ","
+        //         << msg->orientation.y << ","
+        //         << msg->orientation.z << ","
+        //         << avel_w_frd.x() << ","
+        //         << avel_w_frd.y() << ","
+        //         << avel_w_frd.z() << ","
+        //         << a_w_flu.x() << ","
+        //         << a_w_flu.y() << ","
+        //         << a_w_flu.z()
+        //         << "\n";
     }
 
     void odom_callback(const nav_msgs::msg::Odometry::SharedPtr &msg)
@@ -356,12 +356,12 @@ private:
         slam_last_ns = slam_now_ns;
 
         const uint64_t slam_time_us = slam_now_ns / 1000 + px4_ros_offset_us_;
-        csv_slam_ << slam_time_us << ","
-             << position_slam.x() << ","
-             << position_slam.y() << ","
-             << position_slam.z() << ","
-             << msg->pose.pose.orientation.w << "," << msg->pose.pose.orientation.x << "," << msg->pose.pose.orientation.y << "," << msg->pose.pose.orientation.z
-             << "\n";
+        // csv_slam_ << slam_time_us << ","
+        //      << position_slam.x() << ","
+        //      << position_slam.y() << ","
+        //      << position_slam.z() << ","
+        //      << msg->pose.pose.orientation.w << "," << msg->pose.pose.orientation.x << "," << msg->pose.pose.orientation.y << "," << msg->pose.pose.orientation.z
+        //      << "\n";
     }
 };
 

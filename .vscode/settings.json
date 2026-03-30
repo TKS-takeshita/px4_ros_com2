@@ -2,5 +2,33 @@
     "files.associations": {
         "chrono": "cpp",
         "ostream": "cpp"
-    }
+    },
+    "python.autoComplete.extraPaths": [
+        "/home/ros2/ros2_ws/install/odrive_can/local/lib/python3.10/dist-packages",
+        "/home/ros2/ros2_ws/install/fast_lio/local/lib/python3.10/dist-packages",
+        "/home/ros2/ros2_ws/install/livox_ros_driver2/local/lib/python3.10/dist-packages",
+        "/home/ros2/ros2_ws/install/dynamixel_sdk_custom_interfaces/local/lib/python3.10/dist-packages",
+        "/home/ros2/ros2_ws/install/dynamixel_sdk/local/lib/python3.10/dist-packages",
+        "/home/ros2/ros2_ws/install/dynamixel_handler_msgs/local/lib/python3.10/dist-packages",
+        "/home/ros2/ros2_ws/install/drone_execute/local/lib/python3.10/dist-packages",
+        "/home/ros2/ws_sensor_combined/install/px4_ros_com/local/lib/python3.10/dist-packages",
+        "/home/ros2/ws_sensor_combined/install/px4_msgs/local/lib/python3.10/dist-packages",
+        "/home/ros2/livox_ws/install/livox_ros_driver2/local/lib/python3.10/dist-packages",
+        "/opt/ros/humble/lib/python3.10/site-packages",
+        "/opt/ros/humble/local/lib/python3.10/dist-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/ros2/ros2_ws/install/odrive_can/local/lib/python3.10/dist-packages",
+        "/home/ros2/ros2_ws/install/fast_lio/local/lib/python3.10/dist-packages",
+        "/home/ros2/ros2_ws/install/livox_ros_driver2/local/lib/python3.10/dist-packages",
+        "/home/ros2/ros2_ws/install/dynamixel_sdk_custom_interfaces/local/lib/python3.10/dist-packages",
+        "/home/ros2/ros2_ws/install/dynamixel_sdk/local/lib/python3.10/dist-packages",
+        "/home/ros2/ros2_ws/install/dynamixel_handler_msgs/local/lib/python3.10/dist-packages",
+        "/home/ros2/ros2_ws/install/drone_execute/local/lib/python3.10/dist-packages",
+        "/home/ros2/ws_sensor_combined/install/px4_ros_com/local/lib/python3.10/dist-packages",
+        "/home/ros2/ws_sensor_combined/install/px4_msgs/local/lib/python3.10/dist-packages",
+        "/home/ros2/livox_ws/install/livox_ros_driver2/local/lib/python3.10/dist-packages",
+        "/opt/ros/humble/lib/python3.10/site-packages",
+        "/opt/ros/humble/local/lib/python3.10/dist-packages"
+    ]
 }

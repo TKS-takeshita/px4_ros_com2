@@ -1,0 +1,33 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${default}",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/home/ros2/ros2_ws/install/odrive_can/include/**",
+        "/home/ros2/ros2_ws/install/livox_ignition_simulation/include/**",
+        "/home/ros2/ros2_ws/install/fast_lio/include/**",
+        "/home/ros2/ros2_ws/install/livox_ros_driver2/include/**",
+        "/home/ros2/ros2_ws/install/libmavconn/include/**",
+        "/home/ros2/ros2_ws/install/dynamixel_sdk_custom_interfaces/include/**",
+        "/home/ros2/ros2_ws/install/dynamixel_sdk/include/**",
+        "/home/ros2/ros2_ws/install/dynamixel_handler_msgs/include/**",
+        "/home/ros2/ros2_ws/install/drone_execute/include/**",
+        "/home/ros2/ws_sensor_combined/install/px4_ros_com/include/**",
+        "/home/ros2/ws_sensor_combined/install/px4_msgs/include/**",
+        "/home/ros2/livox_ws/install/livox_ros_driver2/include/**",
+        "/opt/ros/humble/include/**",
+        "/home/ros2/ws_sensor_combined/src/px4_ros_com2/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ROS",
+      "intelliSenseMode": "gcc-x64",
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++14"
+    }
+  ],
+  "version": 4
+}

@@ -52,24 +52,28 @@ public:
 
 		auto timer_callback = [this]() -> void {
 
-			// PX4 Offboard維持のため常に送る
-			publish_offboard_control_mode();
-
-			if (!emergency_stop_) {
+			// 1) arm前のoffboard移行用 予送信
+			if (!offboard_enabled_ && !emergency_stop_) {
+				publish_offboard_control_mode();
 				publish_trajectory_setpoint();
+
+				if (offboard_setpoint_counter_ < 20) {
+					offboard_setpoint_counter_++;
+				}
 			}
 
-			// Offboardに入るための最初の数回のセットポイント送信
-			if (offboard_setpoint_counter_ < 20) {
-				offboard_setpoint_counter_++;
-			}
-
-			// arm要求が来ていてまだoffboard化していないなら実行
+			// 2) arm要求が来たら offboard + arm
 			if (arm_request_ && !offboard_enabled_ && offboard_setpoint_counter_ >= 10) {
-				this->publish_vehicle_command(VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1, 6);
-				this->arm();
+				publish_vehicle_command(VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1, 6);
+				arm();
 				offboard_enabled_ = true;
 				arm_request_ = false;
+			}
+
+			// 3) 通常飛行中のみ継続送信
+			if (offboard_enabled_ && is_armed_ && !emergency_stop_) {
+				publish_offboard_control_mode();
+				publish_trajectory_setpoint();
 			}
 		};
 
@@ -88,6 +92,7 @@ public:
 		publish_vehicle_command(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 0.0);
 		is_armed_ = false;
 		offboard_enabled_ = false;
+		arm_request_ = false;
 		RCLCPP_WARN(this->get_logger(), "Disarm command sent");
 	}
 

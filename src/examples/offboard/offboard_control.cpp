@@ -205,7 +205,7 @@ private:
 			} else {
 				target_x_ = 0.0f;
 				target_y_ = 0.0f;
-				target_z_ = -1.5f;
+				target_z_ = -1.2f;
 				target_yaw_ = 0.0f;
 				
 			}

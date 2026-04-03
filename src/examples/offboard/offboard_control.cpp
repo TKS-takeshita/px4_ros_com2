@@ -32,7 +32,7 @@ public:
 			std::bind(&OffboardControl::joy_callback, this, std::placeholders::_1));
 
 		local_pos_subscriber_ = this->create_subscription<VehicleLocalPosition>(
-			"/fmu/in/vehicle_visual_odometry", 10,
+			"/fmu/out/vehicle_local_positon", 10,
 			std::bind(&OffboardControl::local_position_callback, this, std::placeholders::_1));
 
 		offboard_setpoint_counter_ = 0;

@@ -130,6 +130,17 @@ private:
 	int prev_b_button_;
 	int prev_x_button_;
 
+	float wrap_pi(float yaw)
+	{
+		return std::atan2(std::sin(yaw), std::cos(yaw));
+	}
+
+	void land()
+	{
+		publish_vehicle_command(VehicleCommand::VEHICLE_CMD_NAV_LAND);
+		RCLCPP_INFO(this->get_logger(), "Land command sent");
+	}
+
 	void publish_offboard_control_mode()
 	{
 		OffboardControlMode msg{};
@@ -190,17 +201,22 @@ private:
 		// A = buttons[0], B = buttons[1], X = buttons[2]
 		// 実機で /joy を確認して必要なら番号変更
 
-		int a_button = (msg->buttons.size() > 0) ? msg->buttons[0] : 0;
-		int b_button = (msg->buttons.size() > 1) ? msg->buttons[1] : 0;
-		int x_button = (msg->buttons.size() > 2) ? msg->buttons[2] : 0;
-		int y_button = (msg->buttons.size() > 3) ? msg->buttons[3] : 0;
+		int a_button 			= (msg->buttons.size() > 0) 	? msg->buttons[0] : 0;
+		int b_button 			= (msg->buttons.size() > 1) 	? msg->buttons[1] : 0;
+		int x_button 			= (msg->buttons.size() > 2) 	? msg->buttons[2] : 0;
+		int y_button 			= (msg->buttons.size() > 3) 	? msg->buttons[3] : 0;
+		int lb_button 			= (msg->buttons.size() > 4) 	? msg->buttons[4] : 0;
+		int rb_button 			= (msg->buttons.size() > 5) 	? msg->buttons[5] : 0;
+		int back_button 		= (msg->buttons.size() > 6)		? msg->buttons[6] : 0;
+		int start_button 		= (msg->buttons.size() > 7) 	? msg->buttons[7] : 0;
+		int power_button 		= (msg->buttons.size() > 8) 	? msg->buttons[8] : 0;
+		int stick_left_button 	= (msg->buttons.size() > 9) 	? msg->buttons[9] : 0;
+		int stick_right_button 	= (msg->buttons.size() > 10) 	? msg->buttons[10] : 0;
 
-		// Aボタン立ち上がりで arm/disarm 切り替え
+		// Aボタン立ち上がり arm + 浮上
 		if (a_button == 1) {
 			if (!is_armed_) {
 				emergency_stop_ = false;
-
-				// 初回arm時に現在位置を目標値として保持
 				arm_request_ = true;
 				RCLCPP_INFO(this->get_logger(), "A pressed -> request ARM + OFFBOARD");
 			} else {
@@ -219,7 +235,7 @@ private:
 			RCLCPP_WARN(this->get_logger(), "B pressed -> EMERGENCY STOP / DISARM");
 		}
 
-		// Xボタンで現在位置を目標位置として再セット（その場ホールド）
+		// Xボタンで現在位置でホバリング
 		if (x_button == 1) {
 			if (got_local_pos_) {
 				target_x_ = current_x_;
@@ -233,13 +249,64 @@ private:
 		// Yボタンで離陸
 		if(y_button == 1){
 			if(got_local_pos_){
-				target_x_ = current_x_;
-				target_y_ = current_y_;
-				target_z_ = 0.0;
-				target_yaw_ = current_yaw_;
-				RCLCPP_INFO(this->get_logger(), "Y pressed -> takeoff");
+				land();
 			}
 		}
+
+		//LBボタンで前方に移動
+		if(lb_button == 1){
+			target_x_ = current_x_ + 1.0f; // 前方に1m移動
+			target_y_ = current_y_;
+			target_z_ = current_z_;
+			target_yaw_ = current_yaw_;
+			RCLCPP_INFO(this->get_logger(), "LB pressed -> move forward");
+		}
+
+		//RBボタンで後方に移動
+		if(rb_button == 1){
+			target_x_ = current_x_ - 1.0f; // 後方に1m移動
+			target_y_ = current_y_;
+			target_z_ = current_z_;
+			target_yaw_ = current_yaw_;
+			RCLCPP_INFO(this->get_logger(), "RB pressed -> move backward");
+		}
+
+		// Startボタンで左に移動
+		if(start_button == 1){
+			target_x_ = current_x_;
+			target_y_ = current_y_ - 1.0f; // 左に1m移動
+			target_z_ = current_z_;
+			target_yaw_ = current_yaw_;
+			RCLCPP_INFO(this->get_logger(), "Start pressed -> move left");
+		}
+
+		// Backボタンで右に移動
+		if(back_button == 1){
+			target_x_ = current_x_;
+			target_y_ = current_y_ + 1.0f; // 右に
+			target_z_ = current_z_;
+			target_yaw_ = current_yaw_;
+			RCLCPP_INFO(this->get_logger(), "Back pressed -> move right");
+		}
+
+		// stick_left_buttonで時計回りにyawを変更
+		if(stick_left_button == 1){
+			target_x_ = current_x_;
+			target_y_ = current_y_;
+			target_z_ = current_z_;
+			target_yaw_ = wrap_pi(current_yaw_ + M_PI / 4.0f); // 時計回りに45度回転
+			RCLCPP_INFO(this->get_logger(), "Left stick button pressed -> rotate CW");
+		}
+
+		// stick_right_buttonで反時計回りにyawを変更
+		if(stick_right_button == 1){
+			target_x_ = current_x_;
+			target_y_ = current_y_;
+			target_z_ = current_z_;
+			target_yaw_ = wrap_pi(current_yaw_ - M_PI / 4.0f); // 反時計回りに45度回転
+			RCLCPP_INFO(this->get_logger(), "Right stick button pressed -> rotate CCW");
+		}
+
 	}
 };
 

@@ -2,6 +2,7 @@
 #include <px4_msgs/msg/trajectory_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_command.hpp>
 #include <px4_msgs/msg/vehicle_local_position.hpp>
+#include <px4_msgs/msg/vehicle_odometry.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joy.hpp>
 #include <stdint.h>
@@ -10,6 +11,7 @@
 #include <iostream>
 #include <atomic>
 #include <algorithm>
+#include <cmath>
 
 using namespace std::chrono;
 using namespace std::chrono_literals;
@@ -31,8 +33,8 @@ public:
 			"/joy", 10,
 			std::bind(&OffboardControl::joy_callback, this, std::placeholders::_1));
 
-		local_pos_subscriber_ = this->create_subscription<VehicleLocalPosition>(
-			"/fmu/out/vehicle_local_positon", 10,
+		local_pos_subscriber_ = this->create_subscription<px4_msgs::msg::VehicleOdometry>(
+			"/fmu/out/vehicle_odometry", 10,
 			std::bind(&OffboardControl::local_position_callback, this, std::placeholders::_1));
 
 		offboard_setpoint_counter_ = 0;
@@ -104,7 +106,7 @@ private:
 	rclcpp::Publisher<VehicleCommand>::SharedPtr vehicle_command_publisher_;
 
 	rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_subscriber_;
-	rclcpp::Subscription<VehicleLocalPosition>::SharedPtr local_pos_subscriber_;
+	rclcpp::Subscription<VehicleOdometry>::SharedPtr local_pos_subscriber_;
 
 	uint64_t offboard_setpoint_counter_;
 
@@ -145,6 +147,7 @@ private:
 		TrajectorySetpoint msg{};
 		msg.position = {target_x_, target_y_, target_z_};
 		msg.yaw = target_yaw_;
+		// msg.yawspeed = 0.0;
 		msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
 		trajectory_setpoint_publisher_->publish(msg);
 	}
@@ -164,16 +167,20 @@ private:
 		vehicle_command_publisher_->publish(msg);
 	}
 
-	void local_position_callback(const px4_msgs::msg::VehicleLocalPosition::ConstSharedPtr msg )
+	void local_position_callback(const px4_msgs::msg::VehicleOdometry::ConstSharedPtr msg )
 	{
-		if (!msg->xy_valid || !msg->z_valid) {
-			return;
-		}
+		
 
-		current_x_ = msg->x;
-		current_y_ = msg->y;
-		current_z_ = msg->z;
-		current_yaw_ = msg->heading;
+		current_x_ = msg->position[0];
+		current_y_ = msg->position[1];
+		current_z_ = msg->position[2];
+		double q_w = msg->q[0];
+		double q_x = msg->q[1];
+		double q_y = msg->q[2];
+		double q_z = msg->q[3];
+		double siny_cosp = 2.0 * (q_w * q_z + q_x * q_y);
+		double cosy_cosp = 1.0 - 2.0 * (q_y * q_y + q_z * q_z);
+		current_yaw_ = std::atan2(siny_cosp, cosy_cosp);
 		got_local_pos_ = true;
 	}
 
@@ -194,19 +201,13 @@ private:
 				emergency_stop_ = false;
 
 				// 初回arm時に現在位置を目標値として保持
-				if (got_local_pos_) {
-					target_x_ = current_x_;
-					target_y_ = current_y_;
-					target_z_ = current_z_;
-					target_yaw_ = current_yaw_;
-				}
 				arm_request_ = true;
 				RCLCPP_INFO(this->get_logger(), "A pressed -> request ARM + OFFBOARD");
 			} else {
-				target_x_ = 0.0f;
-				target_y_ = 0.0f;
+				target_x_ = current_x_;
+				target_y_ = current_y_;
 				target_z_ = -1.2f;
-				target_yaw_ = 0.0f;
+				target_yaw_ = current_yaw_;
 				
 			}
 		}

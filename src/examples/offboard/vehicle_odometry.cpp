@@ -59,8 +59,8 @@ private:
         out_msg.orientation_variance = {0.01f, 0.01f, 0.01f};
 
         // 6. frame の設定
-        out_msg.pose_frame = px4_msgs::msg::VehicleOdometry::POSE_FRAME_NED;
-        out_msg.velocity_frame = px4_msgs::msg::VehicleOdometry::VELOCITY_FRAME_NED;
+        out_msg.pose_frame = px4_msgs::msg::VehicleOdometry::POSE_FRAME_FRD;
+        out_msg.velocity_frame = px4_msgs::msg::VehicleOdometry::VELOCITY_FRAME_FRD;
 
         pub_->publish(out_msg);
     }

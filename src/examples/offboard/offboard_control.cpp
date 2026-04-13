@@ -249,24 +249,27 @@ private:
 		// Yボタンで離陸
 		if(y_button == 1){
 			if(got_local_pos_){
-				land();
+				target_x_ = current_x_;
+				target_y_ = current_y_;
+				target_z_ = 0.0;
+				target_yaw_ = current_yaw_;				
 			}
 		}
 
 		//LBボタンで前方に移動
 		if(lb_button == 1){
-			target_x_ = current_x_ + 1.0f; // 前方に1m移動
+			target_x_ = current_x_ + 0.4f; // 前方に1m移動
 			target_y_ = current_y_;
-			target_z_ = current_z_;
+			target_z_ = -1.2f;
 			target_yaw_ = current_yaw_;
 			RCLCPP_INFO(this->get_logger(), "LB pressed -> move forward");
 		}
 
 		//RBボタンで後方に移動
 		if(rb_button == 1){
-			target_x_ = current_x_ - 1.0f; // 後方に1m移動
+			target_x_ = current_x_ - 0.4f; // 後方に1m移動
 			target_y_ = current_y_;
-			target_z_ = current_z_;
+			target_z_ = -1.2f;
 			target_yaw_ = current_yaw_;
 			RCLCPP_INFO(this->get_logger(), "RB pressed -> move backward");
 		}
@@ -274,8 +277,8 @@ private:
 		// Startボタンで左に移動
 		if(start_button == 1){
 			target_x_ = current_x_;
-			target_y_ = current_y_ - 1.0f; // 左に1m移動
-			target_z_ = current_z_;
+			target_y_ = current_y_ - 0.4f; // 左に1m移動
+			target_z_ = -1.2f;
 			target_yaw_ = current_yaw_;
 			RCLCPP_INFO(this->get_logger(), "Start pressed -> move left");
 		}
@@ -283,8 +286,8 @@ private:
 		// Backボタンで右に移動
 		if(back_button == 1){
 			target_x_ = current_x_;
-			target_y_ = current_y_ + 1.0f; // 右に
-			target_z_ = current_z_;
+			target_y_ = current_y_ + 0.4f; // 右に
+			target_z_ = -1.2f;
 			target_yaw_ = current_yaw_;
 			RCLCPP_INFO(this->get_logger(), "Back pressed -> move right");
 		}
@@ -293,7 +296,7 @@ private:
 		if(stick_left_button == 1){
 			target_x_ = current_x_;
 			target_y_ = current_y_;
-			target_z_ = current_z_;
+			target_z_ = -1.2f;
 			target_yaw_ = wrap_pi(current_yaw_ + M_PI / 4.0f); // 時計回りに45度回転
 			RCLCPP_INFO(this->get_logger(), "Left stick button pressed -> rotate CW");
 		}
@@ -302,7 +305,7 @@ private:
 		if(stick_right_button == 1){
 			target_x_ = current_x_;
 			target_y_ = current_y_;
-			target_z_ = current_z_;
+			target_z_ = -1.2f;
 			target_yaw_ = wrap_pi(current_yaw_ - M_PI / 4.0f); // 反時計回りに45度回転
 			RCLCPP_INFO(this->get_logger(), "Right stick button pressed -> rotate CCW");
 		}

@@ -33,8 +33,10 @@ public:
 			"/joy", 10,
 			std::bind(&OffboardControl::joy_callback, this, std::placeholders::_1));
 
+		auto qos = rclcpp::SensorDataQoS();
+
 		local_pos_subscriber_ = this->create_subscription<px4_msgs::msg::VehicleOdometry>(
-			"/fmu/out/vehicle_odometry", 10,
+			"/fmu/out/vehicle_odometry", qos,
 			std::bind(&OffboardControl::local_position_callback, this, std::placeholders::_1));
 
 		offboard_setpoint_counter_ = 0;
@@ -180,8 +182,6 @@ private:
 
 	void local_position_callback(const px4_msgs::msg::VehicleOdometry::ConstSharedPtr msg )
 	{
-		
-
 		current_x_ = msg->position[0];
 		current_y_ = msg->position[1];
 		current_z_ = msg->position[2];
@@ -193,6 +193,7 @@ private:
 		double cosy_cosp = 1.0 - 2.0 * (q_y * q_y + q_z * q_z);
 		current_yaw_ = std::atan2(siny_cosp, cosy_cosp);
 		got_local_pos_ = true;
+		RCLCPP_INFO(this->get_logger(), "X = %0.2F, Y = %0.2F, Z = %0.2F, yaw = %0.2f", current_x_, current_y_, current_z_, current_yaw_);
 	}
 
 	void joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg)

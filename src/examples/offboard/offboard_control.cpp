@@ -100,6 +100,22 @@ public:
 		RCLCPP_WARN(this->get_logger(), "Disarm command sent");
 	}
 
+	void kill()
+	{
+		publish_vehicle_command(
+			VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM,
+			0.0f,
+			21196.0f   // ← 強制停止
+		);
+
+		is_armed_ = false;
+		offboard_enabled_ = false;
+		arm_request_ = false;
+		emergency_stop_ = true;
+
+		RCLCPP_ERROR(this->get_logger(), "!!! KILL ACTIVATED !!!");
+	}
+
 private:
 	rclcpp::TimerBase::SharedPtr timer_;
 
@@ -259,54 +275,58 @@ private:
 
 		//LBボタンで前方に移動
 		if(lb_button == 1){
-			target_x_ = current_x_ + 0.4f; // 前方に1m移動
-			target_y_ = current_y_;
-			target_z_ = -1.2f;
-			target_yaw_ = current_yaw_;
+			target_x_ = current_x_ + 1.5f; // 前方に1m移動
+			// target_y_ = current_y_;
+			// target_z_ = -1.2f;
+			// target_yaw_ = current_yaw_;
 			RCLCPP_INFO(this->get_logger(), "LB pressed -> move forward");
 		}
 
 		//RBボタンで後方に移動
 		if(rb_button == 1){
-			target_x_ = current_x_ - 0.4f; // 後方に1m移動
-			target_y_ = current_y_;
-			target_z_ = -1.2f;
-			target_yaw_ = current_yaw_;
+			target_x_ = current_x_ - 1.5f; // 後方に1m移動
+			// target_y_ = current_y_;
+			// target_z_ = -1.2f;
+			// target_yaw_ = current_yaw_;
 			RCLCPP_INFO(this->get_logger(), "RB pressed -> move backward");
 		}
 
 		// Startボタンで左に移動
 		if(start_button == 1){
-			target_x_ = current_x_;
-			target_y_ = current_y_ - 0.4f; // 左に1m移動
-			target_z_ = -1.2f;
-			target_yaw_ = current_yaw_;
+			// target_x_ = current_x_;
+			target_y_ = current_y_ - 1.5f; // 左に1m移動
+			// target_z_ = -1.2f;
+			// target_yaw_ = current_yaw_;
 			RCLCPP_INFO(this->get_logger(), "Start pressed -> move left");
 		}
 
 		// Backボタンで右に移動
 		if(back_button == 1){
-			target_x_ = current_x_;
-			target_y_ = current_y_ + 0.4f; // 右に
-			target_z_ = -1.2f;
-			target_yaw_ = current_yaw_;
+			// target_x_ = current_x_;
+			target_y_ = current_y_ + 1.5f; // 右に
+			// target_z_ = -1.2f;
+			// target_yaw_ = current_yaw_;
 			RCLCPP_INFO(this->get_logger(), "Back pressed -> move right");
+		}
+
+		if (power_button == 1) {
+			kill();
 		}
 
 		// stick_left_buttonで時計回りにyawを変更
 		if(stick_left_button == 1){
-			target_x_ = current_x_;
-			target_y_ = current_y_;
-			target_z_ = -1.2f;
+			// target_x_ = current_x_;
+			// target_y_ = current_y_;
+			// target_z_ = -1.2f;
 			target_yaw_ = wrap_pi(current_yaw_ + M_PI / 4.0f); // 時計回りに45度回転
 			RCLCPP_INFO(this->get_logger(), "Left stick button pressed -> rotate CW");
 		}
 
 		// stick_right_buttonで反時計回りにyawを変更
 		if(stick_right_button == 1){
-			target_x_ = current_x_;
-			target_y_ = current_y_;
-			target_z_ = -1.2f;
+			// target_x_ = current_x_;
+			// target_y_ = current_y_;
+			// target_z_ = -1.2f;
 			target_yaw_ = wrap_pi(current_yaw_ - M_PI / 4.0f); // 反時計回りに45度回転
 			RCLCPP_INFO(this->get_logger(), "Right stick button pressed -> rotate CCW");
 		}

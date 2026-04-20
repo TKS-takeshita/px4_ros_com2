@@ -68,7 +68,21 @@ struct CONST_PARAM
 	static const double INIT_XP;
 	static const double INIT_YP;
 	static const double INIT_ZP;
-	
+
+	static const double INIT_TARGET_E0;
+	static const double INIT_TARGET_E1;
+	static const double INIT_TARGET_E2;
+	static const double INIT_TARGET_E3;
+	static const double INIT_TARGET_WX;
+	static const double INIT_TARGET_WY;
+	static const double INIT_TARGET_WZ;
+	static const double INIT_TARGET_X;
+	static const double INIT_TARGET_Y;
+	static const double INIT_TARGET_Z;
+	static const double INIT_TARGET_XP;
+	static const double INIT_TARGET_YP;
+	static const double INIT_TARGET_ZP;
+
 	static const double FINAL_TIME;
 	static const double TIME_STEP;
 	static const int 	INT_PRINT_SCREEN;
@@ -117,6 +131,20 @@ struct CONST_PARAM_FLOAT
     static const float MAX_THRUST;
     static const float MASS_OF_MACHINE;
     static const float TORQUE_RATE;
+
+	static const float INIT_TARGET_E0;
+	static const float INIT_TARGET_E1;
+	static const float INIT_TARGET_E2;
+	static const float INIT_TARGET_E3;
+	static const float INIT_TARGET_WX;
+	static const float INIT_TARGET_WY;
+	static const float INIT_TARGET_WZ;
+	static const float INIT_TARGET_X;
+	static const float INIT_TARGET_Y;
+	static const float INIT_TARGET_Z;
+	static const float INIT_TARGET_XP;
+	static const float INIT_TARGET_YP;
+	static const float INIT_TARGET_ZP;
 
 	static const float CONTROL_PERIOD;
     static const float INTEGRATION_STEP_SIZE;

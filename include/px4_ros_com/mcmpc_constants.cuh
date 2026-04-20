@@ -1,8 +1,42 @@
 #pragma once
+#include "const_params.hpp"
+#include <cuda.h>
+#include <curand.h>
+#include <curand_kernel.h>
 
 namespace qc_mcmpc {
 
+    struct target_state_t
+    {
+        float e0;
+        float e1;
+        float e2;
+        float e3;
+        float wx;
+        float wy;
+        float wz;
+        float x;
+        float y;
+        float z;
+        float xp;
+        float yp;
+        float zp;
+    };
+    
+      // 入力列
+    class input_array
+    {
+    public:
+        float decoupled_rps[_DEVICE_CONST_HORIZON][4];
+        float cost;
+
+        __device__ void generate_input_array(curandState &state);
+        __device__ void do_simulation();
+    };
+
     //  __constant__ メモリ上に展開する定数 (初期化時のみ変更)
+    extern __constant__ target_state_t target_state_device;
+
     extern __constant__ float u_g_device;
     extern __constant__ float u_upper_lim_device;
     extern __constant__ float u_lower_lim_device;

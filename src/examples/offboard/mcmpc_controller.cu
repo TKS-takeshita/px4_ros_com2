@@ -13,12 +13,13 @@
 
 #include "px4_ros_com/const_params.hpp"
 #include "px4_ros_com/mcmpc_controller.cuh"
-#include "px4_ros_com/mcmpc_constants.cuh"
 #include "mpc_simulator.cu" //__device__関数をインライン展開のため, 分割コンパイルせず直接include
 
 namespace qc_mcmpc
 {
 	// 実体を定義(externを外す)
+	__constant__ target_state_t target_state_device;
+
 	__constant__ float u_g_device;
 	__constant__ float u_upper_lim_device;
 	__constant__ float u_lower_lim_device;
@@ -68,6 +69,22 @@ namespace qc_mcmpc
 	// コンストラクタ
 	mcmpc_controller::mcmpc_controller()
 	{
+		// 目標状態の設定
+		target_state_t init_target{};
+		init_target.e0 = CONST_PARAM_FLOAT::INIT_TARGET_E0;
+		init_target.e1 = CONST_PARAM_FLOAT::INIT_TARGET_E1;
+		init_target.e2 = CONST_PARAM_FLOAT::INIT_TARGET_E2;
+		init_target.e3 = CONST_PARAM_FLOAT::INIT_TARGET_E3;
+		init_target.wx = CONST_PARAM_FLOAT::INIT_TARGET_WX;
+		init_target.wy = CONST_PARAM_FLOAT::INIT_TARGET_WY;
+		init_target.wz = CONST_PARAM_FLOAT::INIT_TARGET_WZ;
+		init_target.x = CONST_PARAM_FLOAT::INIT_TARGET_X;
+		init_target.y = CONST_PARAM_FLOAT::INIT_TARGET_Y;
+		init_target.z = CONST_PARAM_FLOAT::INIT_TARGET_Z;
+		init_target.xp = CONST_PARAM_FLOAT::INIT_TARGET_ZP;
+		init_target.yp = CONST_PARAM_FLOAT::INIT_TARGET_YP;
+		init_target.zp = CONST_PARAM_FLOAT::INIT_TARGET_ZP;
+
 		// 分散の設定　（変数なのは分散固定化が暫定的措置であるため）
 		for(int i=0; i<4; i++)
 			sigma_k[i] = CONST_PARAM_FLOAT::SIGMA_CONST[i];
@@ -100,6 +117,8 @@ namespace qc_mcmpc
 		input_array_host_vec_elite = input_vec_host_elite_temp;
 
 		//  __constant__ メモリに定数をコピー
+		cudaMemcpyToSymbol(target_state_device, &init_target, sizeof(target_state_t));
+
 		cudaMemcpyToSymbol( sigma_k_device, sigma_k, 4 * sizeof( float ) );
 
         cudaMemcpyToSymbol( u_g_device, &CONST_PARAM_FLOAT::U_G, sizeof( float ) );
@@ -180,6 +199,11 @@ namespace qc_mcmpc
 		if(rps_ccw2 > CONST_PARAM_FLOAT::U_UPPER_LIM) rps_ccw2 = CONST_PARAM_FLOAT::U_UPPER_LIM;
 		if(rps_ccw2 < CONST_PARAM_FLOAT::U_LOWER_LIM) rps_ccw2 = CONST_PARAM_FLOAT::U_LOWER_LIM;
 	}
+
+	void update_target_state_device(const target_state_t& target)
+	{
+        cudaMemcpyToSymbol(target_state_device, &target, sizeof(target_state_t));
+    }
 
 	// 運動方程式
 #ifdef PREDICTABLE_COLLISION_WITH_WALL
@@ -451,15 +475,15 @@ namespace qc_mcmpc
 #endif
 			}
 			// コストの計算（0.5かけるのはACADOに合わせるため）
-            best_input_array.cost += 0.5f * (_COST_Q_X*(var_and_z_i_temp[7])*(var_and_z_i_temp[7]) + _COST_Q_Y*var_and_z_i_temp[8]*var_and_z_i_temp[8] + _COST_Q_Z*(var_and_z_i_temp[9]+1.2)*(var_and_z_i_temp[9]+1.2)          // x, y, z
-                + _COST_Q_XP*var_and_z_i_temp[10]*var_and_z_i_temp[10] + _COST_Q_YP*var_and_z_i_temp[11]*var_and_z_i_temp[11] + _COST_Q_ZP*var_and_z_i_temp[12]*var_and_z_i_temp[12]    // xp, yp, zp
-                + _COST_Q_E1*var_and_z_i_temp[1]*var_and_z_i_temp[1] + _COST_Q_E2*var_and_z_i_temp[2]*var_and_z_i_temp[2] + _COST_Q_E3*var_and_z_i_temp[3]*var_and_z_i_temp[3]          // e1, e2, e3
-                + _COST_Q_WX*var_and_z_i_temp[4]*var_and_z_i_temp[4] + _COST_Q_WY*var_and_z_i_temp[5]*var_and_z_i_temp[5] + _COST_Q_WZ*var_and_z_i_temp[6]*var_and_z_i_temp[6]          // wx, wy, wz
-                + _COST_Q_ZI*var_and_z_i_temp[_N_OF_ODES]*var_and_z_i_temp[_N_OF_ODES]                                                                                                  // z_i
-                + _COST_R_VZ*best_input_array.decoupled_rps[i][vz]*best_input_array.decoupled_rps[i][vz]
-                + _COST_R_VWX*best_input_array.decoupled_rps[i][vwx]*best_input_array.decoupled_rps[i][vwx]
-                + _COST_R_VWY*best_input_array.decoupled_rps[i][vwy]*best_input_array.decoupled_rps[i][vwy]
-                + _COST_R_VWZ*best_input_array.decoupled_rps[i][vwz]*best_input_array.decoupled_rps[i][vwz]
+            best_input_array.cost += 0.5f * (_COST_Q_X*(var_and_z_i_temp[7] -target_state_device.x )*(var_and_z_i_temp[7] -target_state_device.x) + _COST_Q_Y *(var_and_z_i_temp[8] -target_state_device.y) *(var_and_z_i_temp[8] -target_state_device.y) + _COST_Q_Z *(var_and_z_i_temp[9] -target_state_device.z) *(var_and_z_i_temp[9] -target_state_device.z)          // x, y, z
+                						  + _COST_Q_XP*(var_and_z_i_temp[10]-target_state_device.xp)*(var_and_z_i_temp[10]-target_state_device.xp)+ _COST_Q_YP*(var_and_z_i_temp[11]-target_state_device.yp)*(var_and_z_i_temp[11]-target_state_device.yp)+ _COST_Q_ZP*(var_and_z_i_temp[12]-target_state_device.zp)*(var_and_z_i_temp[12]-target_state_device.zp)     // xp, yp, zp
+										  + _COST_Q_E1*(var_and_z_i_temp[1] -target_state_device.e1)*(var_and_z_i_temp[1] -target_state_device.e1)+ _COST_Q_E2*(var_and_z_i_temp[2] -target_state_device.e2)*(var_and_z_i_temp[2] -target_state_device.e2)+ _COST_Q_E3*(var_and_z_i_temp[3] -target_state_device.e3)*(var_and_z_i_temp[3] -target_state_device.e3)         // e1, e2, e3
+										  + _COST_Q_WX*(var_and_z_i_temp[4] -target_state_device.wx)*(var_and_z_i_temp[4] -target_state_device.wx)+ _COST_Q_WY*(var_and_z_i_temp[5] -target_state_device.wy)*(var_and_z_i_temp[5] -target_state_device.wy)+ _COST_Q_WZ*(var_and_z_i_temp[6] -target_state_device.wz)*(var_and_z_i_temp[6] -target_state_device.wz)          // wx, wy, wz
+										  + _COST_Q_ZI*var_and_z_i_temp[_N_OF_ODES]*var_and_z_i_temp[_N_OF_ODES]                                                                                                  // z_i
+										  + _COST_R_VZ*best_input_array.decoupled_rps[i][vz]*best_input_array.decoupled_rps[i][vz]
+										  + _COST_R_VWX*best_input_array.decoupled_rps[i][vwx]*best_input_array.decoupled_rps[i][vwx]
+										  + _COST_R_VWY*best_input_array.decoupled_rps[i][vwy]*best_input_array.decoupled_rps[i][vwy]
+										  + _COST_R_VWZ*best_input_array.decoupled_rps[i][vwz]*best_input_array.decoupled_rps[i][vwz]
             );
 		}
 		return best_input_array.cost;

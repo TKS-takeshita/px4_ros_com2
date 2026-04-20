@@ -342,15 +342,15 @@ namespace qc_mcmpc
 #endif
             }
             // コストの計算
-            cost += (_COST_Q_X*(var_and_z_i_temp[7]-0.0f)*(var_and_z_i_temp[7]-0.0f) + _COST_Q_Y*(var_and_z_i_temp[8]-1.0f)*(var_and_z_i_temp[8]-1.0f) + _COST_Q_Z*(var_and_z_i_temp[9]+1.2f)*(var_and_z_i_temp[9]+1.2f)          // x, y, z
-                + _COST_Q_XP*var_and_z_i_temp[10]*var_and_z_i_temp[10] + _COST_Q_YP*var_and_z_i_temp[11]*var_and_z_i_temp[11] + _COST_Q_ZP*var_and_z_i_temp[12]*var_and_z_i_temp[12]    // xp, yp, zp
-                + _COST_Q_E1*var_and_z_i_temp[1]*var_and_z_i_temp[1] + _COST_Q_E2*var_and_z_i_temp[2]*var_and_z_i_temp[2] + _COST_Q_E3*var_and_z_i_temp[3]*var_and_z_i_temp[3]          // e1, e2, e3
-                + _COST_Q_WX*var_and_z_i_temp[4]*var_and_z_i_temp[4] + _COST_Q_WY*var_and_z_i_temp[5]*var_and_z_i_temp[5] + _COST_Q_WZ*var_and_z_i_temp[6]*var_and_z_i_temp[6]          // wx, wy, wz
-                + _COST_Q_ZI*var_and_z_i_temp[_N_OF_ODES]*var_and_z_i_temp[_N_OF_ODES]                                                                                                  // z_i
-                + _COST_R_VZ*decoupled_rps[i][vz]*decoupled_rps[i][vz]
-                + _COST_R_VWX*decoupled_rps[i][vwx]*decoupled_rps[i][vwx]
-                + _COST_R_VWY*decoupled_rps[i][vwy]*decoupled_rps[i][vwy]
-                + _COST_R_VWZ*decoupled_rps[i][vwz]*decoupled_rps[i][vwz]
+            cost += (_COST_Q_X*(var_and_z_i_temp[7] -target_state_device.x )*(var_and_z_i_temp[7] -target_state_device.x) + _COST_Q_Y *(var_and_z_i_temp[8] -target_state_device.y) *(var_and_z_i_temp[8] -target_state_device.y) + _COST_Q_Z *(var_and_z_i_temp[9] -target_state_device.z) *(var_and_z_i_temp[9] -target_state_device.z)     // x, y, z
+                 +  _COST_Q_XP*(var_and_z_i_temp[10]-target_state_device.xp)*(var_and_z_i_temp[10]-target_state_device.xp)+ _COST_Q_YP*(var_and_z_i_temp[11]-target_state_device.yp)*(var_and_z_i_temp[11]-target_state_device.yp)+ _COST_Q_ZP*(var_and_z_i_temp[12]-target_state_device.zp)*(var_and_z_i_temp[12]-target_state_device.zp)    // xp, yp, zp
+                 +  _COST_Q_E1*(var_and_z_i_temp[1] -target_state_device.e1)*(var_and_z_i_temp[1] -target_state_device.e1)+ _COST_Q_E2*(var_and_z_i_temp[2] -target_state_device.e2)*(var_and_z_i_temp[2] -target_state_device.e2)+ _COST_Q_E3*(var_and_z_i_temp[3] -target_state_device.e3)*(var_and_z_i_temp[3] -target_state_device.e3)         // e1, e2, e3
+                 +  _COST_Q_WX*(var_and_z_i_temp[4] -target_state_device.wx)*(var_and_z_i_temp[4] -target_state_device.wx)+ _COST_Q_WY*(var_and_z_i_temp[5] -target_state_device.wy)*(var_and_z_i_temp[5] -target_state_device.wy)+ _COST_Q_WZ*(var_and_z_i_temp[6] -target_state_device.wz)*(var_and_z_i_temp[6] -target_state_device.wz)          // wx, wy, wz
+                 +  _COST_Q_ZI*var_and_z_i_temp[_N_OF_ODES]*var_and_z_i_temp[_N_OF_ODES]                                                                                                  // z_i
+                 +  _COST_R_VZ*decoupled_rps[i][vz]*decoupled_rps[i][vz]
+                 +  _COST_R_VWX*decoupled_rps[i][vwx]*decoupled_rps[i][vwx]
+                 +  _COST_R_VWY*decoupled_rps[i][vwy]*decoupled_rps[i][vwy]
+                 +  _COST_R_VWZ*decoupled_rps[i][vwz]*decoupled_rps[i][vwz]
             );
         }
         // 衝突に対して制約を与えたい場合はここに記述

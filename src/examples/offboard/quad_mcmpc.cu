@@ -6,6 +6,9 @@
 #include <rclcpp/rclcpp.hpp>
 #include <chrono>
 #include <memory>
+// csv保存用
+#include <fstream>
+#include <filesystem>
 
 #include <px4_msgs/msg/vehicle_odometry.hpp>
 #include <px4_msgs/msg/offboard_control_mode.hpp>
@@ -19,6 +22,7 @@
 #include "px4_ros_com/const_params.hpp"
 #include "px4_ros_com/mcmpc_controller.cuh"
 
+using namespace qc_mcmpc;
 
 #if defined(UNPREDICTABLE_COLLISION_WITH_WALL) || defined(PREDICTABLE_COLLISION_WITH_WALL)
 #include <Eigen/Dense>
@@ -31,26 +35,43 @@ enum class ControlMode {
 
 static ControlMode control_mode = ControlMode::PX4_POSITION;
 
-static bool is_armed = false;
 static bool offboard_enabled = false;
 static bool arm_request = false;
-static bool land_request = false;
 static bool disarm_request = false;
-static bool got_local_pos = false;
+static bool kill_request = false;
+
+static float move_dist = 1.5f;
+static float rotate_angle = M_PI/4.0f;
 
 static uint64_t offboard_setpoint_counter = 0;
 
 // 現在状態
 static float current_x = 0.0f;
 static float current_y = 0.0f;
-static float current_z = 0.0f;
+// static float current_z = 0.0f;
 static float current_yaw = 0.0f;
 
+float target_yaw = 0.0f;
+
+// 飛行ログ
+std::ofstream log_csv;
+
 // 目標
-static float target_x = 0.0f;
-static float target_y = 0.0f;
-static float target_z = -1.2f;
-static float target_yaw = 0.0f;
+qc_mcmpc::target_state_t target{
+    CONST_PARAM_FLOAT::INIT_TARGET_E0,
+    CONST_PARAM_FLOAT::INIT_TARGET_E1,
+    CONST_PARAM_FLOAT::INIT_TARGET_E2,
+    CONST_PARAM_FLOAT::INIT_TARGET_E3,
+    CONST_PARAM_FLOAT::INIT_TARGET_WX,
+    CONST_PARAM_FLOAT::INIT_TARGET_WY,
+    CONST_PARAM_FLOAT::INIT_TARGET_WZ,
+    CONST_PARAM_FLOAT::INIT_TARGET_X,
+    CONST_PARAM_FLOAT::INIT_TARGET_Y,
+    CONST_PARAM_FLOAT::INIT_TARGET_Z,
+    CONST_PARAM_FLOAT::INIT_TARGET_XP,
+    CONST_PARAM_FLOAT::INIT_TARGET_YP,
+    CONST_PARAM_FLOAT::INIT_TARGET_ZP
+};
 
 float wrap_pi(float yaw)
 {
@@ -59,37 +80,131 @@ float wrap_pi(float yaw)
 
 void joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg)
 {
-    int a_button = msg->buttons.size() > 0 ? msg->buttons[0] : 0;
-    int b_button = msg->buttons.size() > 1 ? msg->buttons[1] : 0;
-    int x_button = msg->buttons.size() > 2 ? msg->buttons[2] : 0;
-    int y_button = msg->buttons.size() > 3 ? msg->buttons[3] : 0;
+    int a_button            = msg->buttons.size() > 0   ? msg->buttons[0] : 0;
+    static int pre_a        = false;
+    int b_button            = msg->buttons.size() > 1   ? msg->buttons[1] : 0;
+    static int pre_b        = false;
+    int x_button            = msg->buttons.size() > 2   ? msg->buttons[2] : 0;
+    static int pre_x        = false;
+    int y_button            = msg->buttons.size() > 3   ? msg->buttons[3] : 0;
+    static int pre_y        = false;
+    int lb_button 			= msg->buttons.size() > 4 	? msg->buttons[4] : 0;
+    static int pre_lb       = false;
+    int rb_button 			= msg->buttons.size() > 5	? msg->buttons[5] : 0;
+    static int pre_rb       = false;
+    int back_button 		= msg->buttons.size() > 6	? msg->buttons[6] : 0;
+    static int pre_back     = false;
+    int start_button 		= msg->buttons.size() > 7 	? msg->buttons[7] : 0;
+    static int pre_start    = false;
+    int power_button 		= msg->buttons.size() > 8 	? msg->buttons[8] : 0;
+    static int pre_power    = false;
+    int stick_left_button 	= msg->buttons.size() > 9 	? msg->buttons[9] : 0;
+    static int pre_stick_left = false;
+    int stick_right_button 	= msg->buttons.size() > 10 	? msg->buttons[10]: 0;
+    static int pre_stick_right = false;
 
-    if (a_button) {
+    if (a_button & !pre_a) {
         arm_request = true;
         control_mode = ControlMode::PX4_POSITION;
         RCLCPP_INFO(rclcpp::get_logger("mcmpc"), "request ARM +  OFFBOARD");
-        target_x = current_x;
-        target_y = current_y;
-        target_z = -1.2f;
+        target.x = current_x;
+        target.y = current_y;
+        target.z = -1.2f;
         target_yaw = current_yaw;
-
+        pre_a = true;
         RCLCPP_INFO(rclcpp::get_logger("mcmpc"), "A -> ARM + takeoff");
     }
+    else if(!a_button)
+        pre_a = false;
 
-    if (x_button) {
+    if (x_button & !pre_x) {
         control_mode = ControlMode::MCMPC_ATTITUDE;
+        pre_x = true;
         RCLCPP_INFO(rclcpp::get_logger("mcmpc"), "X -> MCMPC mode");
     }
+    else if(!x_button)
+        pre_x = false;
 
-    if (y_button) {
+    if (y_button & !pre_y) {
         control_mode = ControlMode::PX4_POSITION;
-        land_request = true;
+        target.x = current_x;
+        target.y = current_y;
+        target.z = 0.0f;
+        target_yaw = current_yaw;
+        pre_y = true;
         RCLCPP_INFO(rclcpp::get_logger("mcmpc"), "Y -> LAND");
     }
+    else if(!y_button){
+        pre_y = false;
+    }
 
-    if (b_button) {
+    if (b_button & !pre_b) {
         disarm_request = true;
+        pre_b = true;
         RCLCPP_WARN(rclcpp::get_logger("mcmpc"), "B -> DISARM");
+    }
+    else if(!b_button){
+        pre_b = false;
+    }
+
+    if (power_button){
+        kill_request = true;
+    }
+
+    if (lb_button || rb_button || back_button || start_button || stick_left_button || stick_right_button){
+        if (lb_button & !pre_lb){
+            target.x += move_dist;
+            pre_lb = true;
+            RCLCPP_INFO(rclcpp::get_logger("mcmpc"), "LB pressed -> move forward");
+        }
+        else if(!lb_button)
+            pre_lb = false;
+        if(rb_button & !pre_rb){
+            target.x -= move_dist;
+            pre_rb = true;
+            RCLCPP_INFO(rclcpp::get_logger("mcmpc"), "RB pressed -> move backward");
+        }
+        else if(!rb_button)
+            pre_rb = false;
+        if(back_button & !pre_back){
+            target.y += move_dist;//move to right
+            pre_back = true;
+            RCLCPP_INFO(rclcpp::get_logger("mcmpc"), "Back pressed -> move right");
+        }
+        else if(!back_button)
+            pre_back = false;
+        if(start_button & !pre_start){
+            target.y -= move_dist;//move to left
+            pre_start = true;
+            RCLCPP_INFO(rclcpp::get_logger("mcmpc"), "Start pressed -> move left");
+        }
+        else if(!start_button)
+            pre_start = false;
+        if(stick_left_button & !pre_stick_left){
+            target_yaw = wrap_pi(current_yaw + rotate_angle); // 時計回りに回転
+            float half_yaw = 0.5f * target_yaw;
+            target.e0 = std::cos(half_yaw);  // w
+            target.e1 = 0.0f;                // x
+            target.e2 = 0.0f;                // y
+            target.e3 = std::sin(half_yaw);  // z
+            pre_stick_left = true;
+            RCLCPP_INFO(rclcpp::get_logger("mcmpc"), "Left stick button pressed -> rotate CW");
+        }
+        else if(stick_left_button)
+            pre_stick_left = false;
+        if(stick_right_button & !pre_stick_right){
+            target_yaw = wrap_pi(current_yaw - rotate_angle); // 反時計回りに回転
+            float half_yaw = 0.5f * target_yaw;
+            target.e0 = std::cos(half_yaw);  // w
+            target.e1 = 0.0f;                // x
+            target.e2 = 0.0f;                // y
+            target.e3 = std::sin(half_yaw);  // z
+            pre_stick_right = true;
+            RCLCPP_INFO(rclcpp::get_logger("mcmpc"), "right stick button pressed -> rotate CCW");
+        }
+        else if(!stick_right_button){
+            pre_stick_right = false;
+        }
     }
 }
 
@@ -119,12 +234,6 @@ namespace quad_sim_base
 {
     void do_simulation(float var_array_to_integrate[]);
     void output_screen(); //画面出力用関数
-
-    // 相対座標系用の初期値
-    static bool is_first_odometry = true;
-    static double init_x = 0.0;
-    static double init_y = 0.0;
-    static double init_z = 0.0;
 
     // 最新のオドメトリデータ
     static px4_msgs::msg::VehicleOdometry::SharedPtr latest_odom;
@@ -156,7 +265,7 @@ namespace quad_sim_base
 
         // time measurement
         clock_gettime(CLOCK_REALTIME, &start_time);
-        cost = (qc_mcmpc::mcmpc_controller::get_instance()).calc_optimal_input(var_and_z_i_temp_float, input1, input2, input3, input4);
+        cost = (mcmpc_controller::get_instance()).calc_optimal_input(var_and_z_i_temp_float, input1, input2, input3, input4);
         sum_cost += cost;
 
         // time measurement
@@ -181,44 +290,36 @@ namespace quad_sim_base
         float roll_deg  = roll  * (180.0 / M_PI);
         float pitch_deg = pitch * (180.0 / M_PI);
         float yaw_deg   = yaw   * (180.0 / M_PI);
-        printf("%.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f\n",
-               cnt*0.02f,
-               quad_sim_base::var_array_to_integrate[0],
-               quad_sim_base::var_array_to_integrate[1],
-               quad_sim_base::var_array_to_integrate[2],
-               quad_sim_base::var_array_to_integrate[3],
-               quad_sim_base::var_array_to_integrate[4] * (180.0 / M_PI),
-               quad_sim_base::var_array_to_integrate[5] * (180.0 / M_PI),
-               quad_sim_base::var_array_to_integrate[6] * (180.0 / M_PI),
-               quad_sim_base::var_array_to_integrate[7],
-               quad_sim_base::var_array_to_integrate[8],
-               quad_sim_base::var_array_to_integrate[9],
-               quad_sim_base::var_array_to_integrate[10],
-               quad_sim_base::var_array_to_integrate[11],
-               quad_sim_base::var_array_to_integrate[12],
-               roll_deg, pitch_deg, yaw_deg,
-               quad_sim_base::input1, quad_sim_base::input1/CONST_PARAM::MAX_THRUST,
-               quad_sim_base::input2, quad_sim_base::input3, quad_sim_base::input4
-               );
-        cnt++;
+        // printf("%.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f\n",
+        //        cnt*0.02f,
+        //        quad_sim_base::var_array_to_integrate[0],
+        //        quad_sim_base::var_array_to_integrate[1],
+        //        quad_sim_base::var_array_to_integrate[2],
+        //        quad_sim_base::var_array_to_integrate[3],
+        //        quad_sim_base::var_array_to_integrate[4] * (180.0 / M_PI),
+        //        quad_sim_base::var_array_to_integrate[5] * (180.0 / M_PI),
+        //        quad_sim_base::var_array_to_integrate[6] * (180.0 / M_PI),
+        //        quad_sim_base::var_array_to_integrate[7],
+        //        quad_sim_base::var_array_to_integrate[8],
+        //        quad_sim_base::var_array_to_integrate[9],
+        //        quad_sim_base::var_array_to_integrate[10],
+        //        quad_sim_base::var_array_to_integrate[11],
+        //        quad_sim_base::var_array_to_integrate[12],
+        //        roll_deg, pitch_deg, yaw_deg,
+        //        quad_sim_base::input1, quad_sim_base::input1/CONST_PARAM::MAX_THRUST,
+        //        quad_sim_base::input2, quad_sim_base::input3, quad_sim_base::input4
+        //        );
     }
 }
 
 void odometry_callback(const px4_msgs::msg::VehicleOdometry::SharedPtr msg) {
     std::lock_guard<std::mutex> lock(quad_sim_base::odom_mutex);
     
-    // 初回のみ初期値を保存
-    if (quad_sim_base::is_first_odometry) {
-        quad_sim_base::init_x = msg->position[0];
-        quad_sim_base::init_y = msg->position[1];
-        quad_sim_base::init_z = msg->position[2];
-        quad_sim_base::is_first_odometry = false;
-    }
     quad_sim_base::latest_odom = msg;
 
     current_x = msg->position[0];
     current_y = msg->position[1];
-    current_z = msg->position[2];
+    // current_z = msg->position[2];
 
     double qw = msg->q[0];
     double qx = msg->q[1];
@@ -228,8 +329,6 @@ void odometry_callback(const px4_msgs::msg::VehicleOdometry::SharedPtr msg) {
     double siny = 2.0 * (qw*qz + qx*qy);
     double cosy = 1.0 - 2.0 * (qy*qy + qz*qz);
     current_yaw = std::atan2(siny, cosy);
-
-    got_local_pos = true;
 }
 
 int main(int argc, char *argv[])
@@ -245,8 +344,30 @@ int main(int argc, char *argv[])
     auto cmd_pub = node->create_publisher<px4_msgs::msg::VehicleCommand>("/fmu/in/vehicle_command", 10);
     auto joy_sub = node->create_subscription<sensor_msgs::msg::Joy>("/joy", 10, joy_callback);
 
+    log_csv.open("/home/ros2/ws_sensor_combined/src/px4_ros_com/csv/mcmpc_log.csv", std::ios::out);
+    log_csv << "time" << ","
+            << "e0"  << ","
+            << "e1"  << ","
+            << "e2"  << ","
+            << "e3"  << ","
+            << "wx"  << ","
+            << "wy"  << ","
+            << "wz"  << ","
+            << "x"   << ","
+            << "y"   << ","
+            << "z"   << ","
+            << "xp"  << ","
+            << "yp"  << ","
+            << "zp"  << ","
+            << "input1" << ","
+            << "input2" << ","
+            << "input3" << ","
+            << "input4" << "\n";
+
+
     rclcpp::Rate rate(50);
     while (rclcpp::ok()) {
+        qc_mcmpc::update_target_state_device(target);
 
         rclcpp::spin_some(node);
         std::lock_guard<std::mutex> lock(quad_sim_base::odom_mutex);
@@ -254,8 +375,24 @@ int main(int argc, char *argv[])
             rate.sleep();
             continue;
         }
+
         // 相対座標系に変換
         auto msg = quad_sim_base::latest_odom;
+        // 状態更新
+        quad_sim_base::var_array_to_integrate[0]  = msg->q[0];//qw
+        quad_sim_base::var_array_to_integrate[1]  = msg->q[1];//qx
+        quad_sim_base::var_array_to_integrate[2]  = msg->q[2];//qy
+        quad_sim_base::var_array_to_integrate[3]  = msg->q[3];//qz
+        quad_sim_base::var_array_to_integrate[4]  = msg->angular_velocity[0];//wx
+        quad_sim_base::var_array_to_integrate[5]  = msg->angular_velocity[1];//wy
+        quad_sim_base::var_array_to_integrate[6]  = msg->angular_velocity[2];//wz
+        quad_sim_base::var_array_to_integrate[7]  = msg->position[0];//x
+        quad_sim_base::var_array_to_integrate[8]  = msg->position[1];//y
+        quad_sim_base::var_array_to_integrate[9]  = msg->position[2];//z
+        quad_sim_base::var_array_to_integrate[10] = msg->velocity[0];//vx
+        quad_sim_base::var_array_to_integrate[11] = msg->velocity[1];//vy
+        quad_sim_base::var_array_to_integrate[12] = msg->velocity[2];//vz
+
         // MPC計算
         quad_sim_base::do_simulation(quad_sim_base::var_array_to_integrate);
         
@@ -280,17 +417,21 @@ int main(int argc, char *argv[])
                 publish_vehicle_command(node, cmd_pub, px4_msgs::msg::VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1, 6);
                 publish_vehicle_command(node, cmd_pub, px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0);
                 offboard_enabled = true;
-                is_armed = true;
                 arm_request = false;
             }
         }
         else if(disarm_request){
             publish_vehicle_command(node, cmd_pub, px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 0.0);
-            is_armed = false;
             offboard_enabled = false;
             arm_request = false;
             disarm_request = false;
             RCLCPP_WARN(rclcpp::get_logger("mcmpc"), "Disarm command sent");
+        }
+
+        if(kill_request){
+            publish_vehicle_command(node, cmd_pub, px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 0.0f, 21196.0f);   // ← 強制停止
+            kill_request = false;
+            RCLCPP_ERROR(rclcpp::get_logger("mcmpc"), "!!! KILL ACTIVATED !!!");
         }
         // ======================
         // PX4位置制御
@@ -299,7 +440,7 @@ int main(int argc, char *argv[])
         if (control_mode == ControlMode::PX4_POSITION) {
             px4_msgs::msg::TrajectorySetpoint sp{};
             sp.timestamp = node->get_clock()->now().nanoseconds() / 1000;
-            sp.position = {target_x, target_y, target_z};
+            sp.position = {target.x, target.y, target.z};
             sp.yaw = target_yaw;
             traj_pub->publish(sp);
         }
@@ -328,11 +469,34 @@ int main(int argc, char *argv[])
             attitude_thrust_pub->publish(sp_att);
 }
         // 標準出力
-        quad_sim_base::output_screen();
+        // quad_sim_base::output_screen();
+
+        static double log_time = 0.0;
+
+        log_csv << log_time << ","
+                << quad_sim_base::var_array_to_integrate[0]  << ","
+                << quad_sim_base::var_array_to_integrate[1]  << ","
+                << quad_sim_base::var_array_to_integrate[2]  << ","
+                << quad_sim_base::var_array_to_integrate[3]  << ","
+                << quad_sim_base::var_array_to_integrate[4]  << ","
+                << quad_sim_base::var_array_to_integrate[5]  << ","
+                << quad_sim_base::var_array_to_integrate[6]  << ","
+                << quad_sim_base::var_array_to_integrate[7]  << ","
+                << quad_sim_base::var_array_to_integrate[8]  << ","
+                << quad_sim_base::var_array_to_integrate[9]  << ","
+                << quad_sim_base::var_array_to_integrate[10] << ","
+                << quad_sim_base::var_array_to_integrate[11] << ","
+                << quad_sim_base::var_array_to_integrate[12] << ","
+                << quad_sim_base::input1 << ","
+                << quad_sim_base::input2 << ","
+                << quad_sim_base::input3 << ","
+                << quad_sim_base::input4 << "\n";
+
+        log_time += 0.02;   // 50 Hzなら
 
         // 実測の代わりにシミュレーションを使うための1stepシミュレーション関数
-        verification_simulation_one_step(quad_sim_base::var_array_to_integrate,
-                quad_sim_base::input1, quad_sim_base::input2, quad_sim_base::input3, quad_sim_base::input4);
+        // verification_simulation_one_step(quad_sim_base::var_array_to_integrate,
+        //         quad_sim_base::input1, quad_sim_base::input2, quad_sim_base::input3, quad_sim_base::input4);
 
         rate.sleep();
     }

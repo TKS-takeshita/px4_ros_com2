@@ -1,12 +1,7 @@
 #pragma once 
-#include <cuda.h>
-#include <curand.h>
-#include <curand_kernel.h>
-
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
-
-#include "const_params.hpp"
+#include "px4_ros_com/mcmpc_constants.cuh"
 
 enum decoupled_rotor
 {
@@ -18,16 +13,9 @@ enum decoupled_rotor
 
 namespace qc_mcmpc
 {
-    // 入力列
-    class input_array
-    {
-    public:
-        float decoupled_rps[_DEVICE_CONST_HORIZON][4];
-        float cost;
-
-        __device__ void generate_input_array(curandState &state);
-        __device__ void do_simulation();
-    };
+    // 目標状態の更新用関数
+	    void update_target_state_device(const target_state_t& target);
+        
     // シングルトンとして実装
     class mcmpc_controller
     {

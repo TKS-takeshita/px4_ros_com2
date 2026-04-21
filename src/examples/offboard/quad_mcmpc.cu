@@ -9,6 +9,7 @@
 // csv保存用
 #include <fstream>
 #include <filesystem>
+#include <sstream>
 
 #include <px4_msgs/msg/vehicle_odometry.hpp>
 #include <px4_msgs/msg/offboard_control_mode.hpp>
@@ -343,6 +344,13 @@ int main(int argc, char *argv[])
     auto traj_pub = node->create_publisher<px4_msgs::msg::TrajectorySetpoint>("/fmu/in/trajectory_setpoint", 10);
     auto cmd_pub = node->create_publisher<px4_msgs::msg::VehicleCommand>("/fmu/in/vehicle_command", 10);
     auto joy_sub = node->create_subscription<sensor_msgs::msg::Joy>("/joy", 10, joy_callback);
+
+    auto now = std::chrono::system_clock::now();
+    std::time_t t = std::chrono::system_clock::to_time_t(now);
+    std::tm tm{};
+    localtime_r(&t, &tm);
+
+    std::ostringstream oss;
 
     log_csv.open("/home/ros2/ws_sensor_combined/src/px4_ros_com/csv/mcmpc_log.csv", std::ios::out);
     log_csv << "time" << ","

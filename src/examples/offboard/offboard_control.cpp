@@ -59,8 +59,11 @@ public:
 			"/fmu/out/vehicle_local_position_setpoint", qos,
 			std::bind(&OffboardControl::local_position_setpoint_callback, this, std::placeholders::_1));
 
+		// attitude_setpoint_subscriber_ = this->create_subscription<VehicleAttitudeSetpoint>(
+		// 	"/fmu/out/vehicle_attitude_setpoint_v1", qos,
+		// 	std::bind(&OffboardControl::attitude_setpoint_callback, this, std::placeholders::_1));
 		attitude_setpoint_subscriber_ = this->create_subscription<VehicleAttitudeSetpoint>(
-			"/fmu/out/vehicle_attitude_setpoint_v1", qos,
+			"/fmu/out/vehicle_attitude_setpoint", qos,
 			std::bind(&OffboardControl::attitude_setpoint_callback, this, std::placeholders::_1));
 
 		rates_setpoint_subscriber_ = this->create_subscription<VehicleRatesSetpoint>(
@@ -912,6 +915,7 @@ private:
 				RCLCPP_INFO(this->get_logger(), "A pressed -> request ARM + takeoff");
 			} else {
 				// start_square_trajectory();
+				// start_step_input();
 				start_x_sine_input();
 			}
 		}

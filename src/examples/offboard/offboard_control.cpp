@@ -59,12 +59,12 @@ public:
 			"/fmu/out/vehicle_local_position_setpoint", qos,
 			std::bind(&OffboardControl::local_position_setpoint_callback, this, std::placeholders::_1));
 
-		// attitude_setpoint_subscriber_ = this->create_subscription<VehicleAttitudeSetpoint>(
-		// 	"/fmu/out/vehicle_attitude_setpoint_v1", qos,
-		// 	std::bind(&OffboardControl::attitude_setpoint_callback, this, std::placeholders::_1));
 		attitude_setpoint_subscriber_ = this->create_subscription<VehicleAttitudeSetpoint>(
-			"/fmu/out/vehicle_attitude_setpoint", qos,
+			"/fmu/out/vehicle_attitude_setpoint_v1", qos,
 			std::bind(&OffboardControl::attitude_setpoint_callback, this, std::placeholders::_1));
+		// attitude_setpoint_subscriber_ = this->create_subscription<VehicleAttitudeSetpoint>(
+		// 	"/fmu/out/vehicle_attitude_setpoint", qos,
+		// 	std::bind(&OffboardControl::attitude_setpoint_callback, this, std::placeholders::_1));
 
 		rates_setpoint_subscriber_ = this->create_subscription<VehicleRatesSetpoint>(
 			"/fmu/out/vehicle_rates_setpoint", qos,

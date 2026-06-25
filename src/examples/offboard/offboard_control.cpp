@@ -10,6 +10,7 @@
 #include <px4_msgs/msg/vehicle_local_position_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_land_detected.hpp>
 #include <px4_msgs/msg/vehicle_odometry.hpp>
+#include <px4_msgs/msg/rate_ctrl_status.hpp>
 #include <px4_msgs/msg/vehicle_rates_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_thrust_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_torque_setpoint.hpp>
@@ -69,6 +70,10 @@ public:
 		rates_setpoint_subscriber_ = this->create_subscription<VehicleRatesSetpoint>(
 			"/fmu/out/vehicle_rates_setpoint", qos,
 			std::bind(&OffboardControl::rates_setpoint_callback, this, std::placeholders::_1));
+
+		rate_ctrl_status_subscriber_ = this->create_subscription<RateCtrlStatus>(
+			"/fmu/out/rate_ctrl_status", qos,
+			std::bind(&OffboardControl::rate_ctrl_status_callback, this, std::placeholders::_1));
 
 		thrust_setpoint_subscriber_ = this->create_subscription<VehicleThrustSetpoint>(
 			"/fmu/out/vehicle_thrust_setpoint", qos,
@@ -204,6 +209,7 @@ private:
 	rclcpp::Subscription<VehicleLocalPositionSetpoint>::SharedPtr local_position_setpoint_subscriber_;
 	rclcpp::Subscription<VehicleAttitudeSetpoint>::SharedPtr attitude_setpoint_subscriber_;
 	rclcpp::Subscription<VehicleRatesSetpoint>::SharedPtr rates_setpoint_subscriber_;
+	rclcpp::Subscription<RateCtrlStatus>::SharedPtr rate_ctrl_status_subscriber_;
 	rclcpp::Subscription<VehicleThrustSetpoint>::SharedPtr thrust_setpoint_subscriber_;
 	rclcpp::Subscription<VehicleTorqueSetpoint>::SharedPtr torque_setpoint_subscriber_;
 	rclcpp::Subscription<ActuatorMotors>::SharedPtr actuator_motors_subscriber_;
@@ -248,6 +254,7 @@ private:
 	VehicleLocalPositionSetpoint latest_traj_sp_{};
 	VehicleAttitudeSetpoint latest_att_sp_{};
 	VehicleRatesSetpoint latest_rate_sp_{};
+	RateCtrlStatus latest_rate_ctrl_status_{};
 	VehicleThrustSetpoint latest_thrust_sp_{};
 	VehicleTorqueSetpoint latest_torque_sp_{};
 	ActuatorMotors latest_actuator_motors_{};
@@ -257,6 +264,7 @@ private:
 	bool has_traj_sp_{false};
 	bool has_att_sp_{false};
 	bool has_rate_sp_{false};
+	bool has_rate_ctrl_status_{false};
 	bool has_thrust_sp_{false};
 	bool has_torque_sp_{false};
 	bool has_actuator_motors_{false};
@@ -359,7 +367,11 @@ private:
 		for (int i = 0; i < ActuatorMotors::NUM_CONTROLS; ++i) {
 			log_file_ << ",actuator_motor_" << i;
 		}
-		log_file_ << "\n";
+		log_file_
+			<< ",rate_ctrl_status_timestamp"
+			<< ",rollspeed_integ"
+			<< ",pitchspeed_integ"
+			<< ",yawspeed_integ\n";
 		log_file_.flush();
 		RCLCPP_INFO(this->get_logger(), "Logging to: %s", log_path_.c_str());
 	}
@@ -730,6 +742,15 @@ private:
 			}
 		}
 
+		if (has_rate_ctrl_status_) {
+			log_file_ << "," << latest_rate_ctrl_status_.timestamp
+				<< "," << latest_rate_ctrl_status_.rollspeed_integ
+				<< "," << latest_rate_ctrl_status_.pitchspeed_integ
+				<< "," << latest_rate_ctrl_status_.yawspeed_integ;
+		} else {
+			log_file_ << ",nan,nan,nan,nan";
+		}
+
 		log_file_ << "\n";
 		log_file_.flush();
 	}
@@ -782,6 +803,13 @@ private:
 		std::lock_guard<std::mutex> lock(sp_mutex_);
 		latest_rate_sp_ = *msg;
 		has_rate_sp_ = true;
+	}
+
+	void rate_ctrl_status_callback(const RateCtrlStatus::ConstSharedPtr msg)
+	{
+		std::lock_guard<std::mutex> lock(sp_mutex_);
+		latest_rate_ctrl_status_ = *msg;
+		has_rate_ctrl_status_ = true;
 	}
 
 	void thrust_setpoint_callback(const VehicleThrustSetpoint::ConstSharedPtr msg)

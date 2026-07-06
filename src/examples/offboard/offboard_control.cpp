@@ -3,18 +3,19 @@
 #include <px4_msgs/msg/actuator_motors.hpp>
 #include <px4_msgs/msg/vehicle_command.hpp>
 #include <px4_msgs/msg/vehicle_angular_velocity.hpp>
+#include <px4_msgs/msg/vehicle_attitude.hpp>
 #include <px4_msgs/msg/vehicle_attitude_setpoint.hpp>
 #include <px4_msgs/msg/hover_thrust_estimate.hpp>
 #include <px4_msgs/msg/takeoff_status.hpp>
 #include <px4_msgs/msg/vehicle_local_position.hpp>
 #include <px4_msgs/msg/vehicle_local_position_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_land_detected.hpp>
-#include <px4_msgs/msg/vehicle_odometry.hpp>
 #include <px4_msgs/msg/rate_ctrl_status.hpp>
 #include <px4_msgs/msg/vehicle_rates_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_thrust_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_torque_setpoint.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/joy.hpp>
 #include <stdint.h>
 
@@ -23,6 +24,7 @@
 #include <iostream>
 #include <atomic>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <fstream>
 #include <limits>
@@ -87,13 +89,21 @@ public:
 			"/fmu/out/actuator_motors", qos,
 			std::bind(&OffboardControl::actuator_motors_callback, this, std::placeholders::_1));
 
-		local_pos_subscriber_ = this->create_subscription<px4_msgs::msg::VehicleOdometry>(
-			"/fmu/out/vehicle_odometry", qos,
+		local_pos_subscriber_ = this->create_subscription<px4_msgs::msg::VehicleLocalPosition>(
+			"/fmu/out/vehicle_local_position", qos,
 			std::bind(&OffboardControl::local_position_callback, this, std::placeholders::_1));
+
+		attitude_subscriber_ = this->create_subscription<px4_msgs::msg::VehicleAttitude>(
+			"/fmu/out/vehicle_attitude", qos,
+			std::bind(&OffboardControl::vehicle_attitude_callback, this, std::placeholders::_1));
 
 		angular_velocity_subscriber_ = this->create_subscription<px4_msgs::msg::VehicleAngularVelocity>(
 			"/fmu/out/vehicle_angular_velocity", qos,
 			std::bind(&OffboardControl::angular_velocity_callback, this, std::placeholders::_1));
+
+		livox_imu_subscriber_ = this->create_subscription<sensor_msgs::msg::Imu>(
+			"/livox/imu", qos,
+			std::bind(&OffboardControl::livox_imu_callback, this, std::placeholders::_1));
 
 		hover_thrust_estimate_subscriber_ = this->create_subscription<px4_msgs::msg::HoverThrustEstimate>(
 			"/fmu/out/hover_thrust_estimate", qos,
@@ -108,6 +118,7 @@ public:
 			std::bind(&OffboardControl::vehicle_land_detected_callback, this, std::placeholders::_1));
 
 		open_log_file();
+		declare_trajectory_parameters();
 
 		offboard_setpoint_counter_ = 0;
 		is_armed_ = false;
@@ -213,8 +224,10 @@ private:
 	rclcpp::Subscription<VehicleThrustSetpoint>::SharedPtr thrust_setpoint_subscriber_;
 	rclcpp::Subscription<VehicleTorqueSetpoint>::SharedPtr torque_setpoint_subscriber_;
 	rclcpp::Subscription<ActuatorMotors>::SharedPtr actuator_motors_subscriber_;
-	rclcpp::Subscription<VehicleOdometry>::SharedPtr local_pos_subscriber_;
+	rclcpp::Subscription<VehicleLocalPosition>::SharedPtr local_pos_subscriber_;
+	rclcpp::Subscription<VehicleAttitude>::SharedPtr attitude_subscriber_;
 	rclcpp::Subscription<VehicleAngularVelocity>::SharedPtr angular_velocity_subscriber_;
+	rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr livox_imu_subscriber_;
 	rclcpp::Subscription<HoverThrustEstimate>::SharedPtr hover_thrust_estimate_subscriber_;
 	rclcpp::Subscription<TakeoffStatus>::SharedPtr takeoff_status_subscriber_;
 	rclcpp::Subscription<VehicleLandDetected>::SharedPtr vehicle_land_detected_subscriber_;
@@ -238,12 +251,21 @@ private:
 	float current_vx_{0.0f};
 	float current_vy_{0.0f};
 	float current_vz_{0.0f};
+	float current_z_deriv_{0.0f};
 	float current_roll_{0.0f};
 	float current_pitch_{0.0f};
 	float current_yaw_{0.0f};
 	float current_wx_{0.0f};
 	float current_wy_{0.0f};
 	float current_wz_{0.0f};
+	uint64_t current_local_position_timestamp_{0};
+	uint64_t current_local_position_timestamp_sample_{0};
+	uint64_t current_attitude_timestamp_{0};
+	uint64_t current_attitude_timestamp_sample_{0};
+	uint64_t current_angular_velocity_timestamp_{0};
+	uint64_t current_angular_velocity_timestamp_sample_{0};
+	bool got_attitude_{false};
+	bool got_angular_velocity_{false};
 
 	float setpoint_vx_{0.0f};
 	float setpoint_vy_{0.0f};
@@ -258,6 +280,8 @@ private:
 	VehicleThrustSetpoint latest_thrust_sp_{};
 	VehicleTorqueSetpoint latest_torque_sp_{};
 	ActuatorMotors latest_actuator_motors_{};
+	VehicleAngularVelocity latest_angular_velocity_{};
+	sensor_msgs::msg::Imu latest_livox_imu_{};
 	HoverThrustEstimate latest_hover_thrust_estimate_{};
 	TakeoffStatus latest_takeoff_status_{};
 	VehicleLandDetected latest_vehicle_land_detected_{};
@@ -268,6 +292,8 @@ private:
 	bool has_thrust_sp_{false};
 	bool has_torque_sp_{false};
 	bool has_actuator_motors_{false};
+	bool has_angular_velocity_{false};
+	bool has_livox_imu_{false};
 	bool has_hover_thrust_estimate_{false};
 	bool has_takeoff_status_{false};
 	bool has_vehicle_land_detected_{false};
@@ -283,7 +309,14 @@ private:
 		SinZ,
 		StepHold,
 		StepApplied,
+		ConfiguredInput,
 		Done
+	};
+
+	enum class AxisMotionMode {
+		Hold,
+		Step,
+		Sin
 	};
 
 	struct Waypoint {
@@ -293,7 +326,14 @@ private:
 		float yaw;
 	};
 
+	struct AxisMotionConfig {
+		AxisMotionMode x{AxisMotionMode::Sin};
+		AxisMotionMode y{AxisMotionMode::Hold};
+		AxisMotionMode z{AxisMotionMode::Hold};
+	};
+
 	TrajectoryPhase trajectory_phase_{TrajectoryPhase::Idle};
+	AxisMotionConfig axis_motion_config_{};
 	std::vector<Waypoint> waypoints_;
 	std::size_t waypoint_index_{0};
 	rclcpp::Time phase_start_time_;
@@ -337,6 +377,59 @@ private:
 		return (this->get_clock()->now() - control_start_time_).seconds();
 	}
 
+	void declare_trajectory_parameters()
+	{
+		this->declare_parameter<std::string>("trajectory.x_mode", "sin");
+		this->declare_parameter<std::string>("trajectory.y_mode", "hold");
+		this->declare_parameter<std::string>("trajectory.z_mode", "hold");
+	}
+
+	AxisMotionMode parse_axis_motion_mode(const std::string &mode, const char *axis) const
+	{
+		std::string normalized = mode;
+		std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+			[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+		if (normalized == "sin" || normalized == "sine") {
+			return AxisMotionMode::Sin;
+		}
+		if (normalized == "step") {
+			return AxisMotionMode::Step;
+		}
+		if (normalized == "hold" || normalized == "none" || normalized == "off") {
+			return AxisMotionMode::Hold;
+		}
+
+		RCLCPP_WARN(
+			this->get_logger(),
+			"Unknown trajectory.%s_mode '%s'; using hold",
+			axis,
+			mode.c_str());
+		return AxisMotionMode::Hold;
+	}
+
+	AxisMotionConfig read_axis_motion_config()
+	{
+		return {
+			parse_axis_motion_mode(this->get_parameter("trajectory.x_mode").as_string(), "x"),
+			parse_axis_motion_mode(this->get_parameter("trajectory.y_mode").as_string(), "y"),
+			parse_axis_motion_mode(this->get_parameter("trajectory.z_mode").as_string(), "z")
+		};
+	}
+
+	const char *axis_motion_mode_name(AxisMotionMode mode) const
+	{
+		switch (mode) {
+		case AxisMotionMode::Hold:
+			return "hold";
+		case AxisMotionMode::Step:
+			return "step";
+		case AxisMotionMode::Sin:
+			return "sin";
+		}
+		return "unknown";
+	}
+
 	void open_log_file()
 	{
 		log_file_.open(log_path_, std::ios::out | std::ios::trunc);
@@ -347,23 +440,38 @@ private:
 
 		log_file_
 			<< "control_time_s,"
+			<< "local_pos_timestamp,local_pos_timestamp_sample,"
 			<< "pos_x,pos_y,pos_z,"
 			<< "vel_x,vel_y,vel_z,"
+			<< "local_pos_z_deriv,"
+			<< "attitude_timestamp,attitude_timestamp_sample,"
 			<< "roll,pitch,yaw,"
+			<< "angular_velocity_timestamp,angular_velocity_timestamp_sample,"
 			<< "angular_vel_x,angular_vel_y,angular_vel_z,"
+			<< "local_sp_timestamp,"
 			<< "local_sp_x,local_sp_y,local_sp_z,local_sp_yaw,"
 			<< "local_sp_vx,local_sp_vy,local_sp_vz,"
 			<< "local_sp_ax,local_sp_ay,local_sp_az,local_sp_yawspeed,"
+			<< "att_sp_timestamp,"
 			<< "att_sp_qw,att_sp_qx,att_sp_qy,att_sp_qz,"
+			<< "rate_sp_timestamp,"
 			<< "rate_sp_roll,rate_sp_pitch,rate_sp_yaw,"
 			<< "rate_sp_thrust_x,rate_sp_thrust_y,rate_sp_thrust_z,"
 			<< "target_x,target_y,target_z,target_yaw,"
 			<< "phase,event,"
+			<< "hover_thrust_timestamp,"
 			<< "hover_thrust,hover_thrust_valid,"
+			<< "takeoff_status_timestamp,"
 			<< "takeoff_state,takeoff_tilt_limit,"
+			<< "land_detected_timestamp,"
 			<< "landed,ground_contact,maybe_landed,"
+			<< "thrust_sp_timestamp,"
 			<< "thrust_sp_x,thrust_sp_y,thrust_sp_z,"
+			<< "torque_sp_timestamp,"
 			<< "torque_sp_x,torque_sp_y,torque_sp_z";
+		log_file_
+			<< ",actuator_timestamp"
+			<< ",actuator_timestamp_sample";
 		for (int i = 0; i < ActuatorMotors::NUM_CONTROLS; ++i) {
 			log_file_ << ",actuator_motor_" << i;
 		}
@@ -371,7 +479,20 @@ private:
 			<< ",rate_ctrl_status_timestamp"
 			<< ",rollspeed_integ"
 			<< ",pitchspeed_integ"
-			<< ",yawspeed_integ\n";
+			<< ",yawspeed_integ"
+			<< ",livox_imu_time_s"
+			<< ",livox_imu_stamp_sec"
+			<< ",livox_imu_stamp_nanosec"
+			<< ",livox_imu_orientation_x"
+			<< ",livox_imu_orientation_y"
+			<< ",livox_imu_orientation_z"
+			<< ",livox_imu_orientation_w"
+			<< ",livox_imu_angular_velocity_x"
+			<< ",livox_imu_angular_velocity_y"
+			<< ",livox_imu_angular_velocity_z"
+			<< ",livox_imu_linear_acceleration_x"
+			<< ",livox_imu_linear_acceleration_y"
+			<< ",livox_imu_linear_acceleration_z\n";
 		log_file_.flush();
 		RCLCPP_INFO(this->get_logger(), "Logging to: %s", log_path_.c_str());
 	}
@@ -433,29 +554,24 @@ private:
 
 	void start_x_sine_input()
 	{
-		trajectory_phase_ = TrajectoryPhase::SinX;
-		x_sine_only_ = true;
-		phase_start_time_ = this->get_clock()->now();
-		control_start_time_ = phase_start_time_;
-		target_x_ = 0.0f;
-		target_y_ = 0.0f;
-		target_z_ = fixed_altitude_;
-		target_yaw_ = got_local_pos_ ? current_yaw_ : target_yaw_;
-		setpoint_vx_ = 0.0f;
-		setpoint_vy_ = 0.0f;
-		setpoint_vz_ = 0.0f;
-		setpoint_yawspeed_ = 0.0f;
-		mark_log_event("x_sine_start");
-		RCLCPP_INFO(
-			this->get_logger(),
-			"X sine input started: amplitude %.1f m, period %.1f seconds",
-			x_sin_amplitude_,
-			sin_period_sec_);
+		start_axis_input(AxisMotionMode::Sin, AxisMotionMode::Hold, AxisMotionMode::Hold);
 	}
 
 	void start_step_input()
 	{
-		trajectory_phase_ = TrajectoryPhase::StepHold;
+		start_axis_input(AxisMotionMode::Step, AxisMotionMode::Hold, AxisMotionMode::Hold);
+	}
+
+	void start_configured_axis_input()
+	{
+		const AxisMotionConfig config = read_axis_motion_config();
+		start_axis_input(config.x, config.y, config.z);
+	}
+
+	void start_axis_input(AxisMotionMode x_mode, AxisMotionMode y_mode, AxisMotionMode z_mode)
+	{
+		axis_motion_config_ = {x_mode, y_mode, z_mode};
+		trajectory_phase_ = TrajectoryPhase::ConfiguredInput;
 		x_sine_only_ = false;
 		phase_start_time_ = this->get_clock()->now();
 		control_start_time_ = phase_start_time_;
@@ -467,11 +583,13 @@ private:
 		setpoint_vy_ = 0.0f;
 		setpoint_vz_ = 0.0f;
 		setpoint_yawspeed_ = 0.0f;
-		mark_log_event("step_start");
+		mark_log_event("axis_input_start");
 		RCLCPP_INFO(
 			this->get_logger(),
-			"Step input started: hold (0, 0, -1) for %.1f seconds",
-			step_hold_duration_sec_);
+			"Axis input started: x=%s, y=%s, z=%s",
+			axis_motion_mode_name(axis_motion_config_.x),
+			axis_motion_mode_name(axis_motion_config_.y),
+			axis_motion_mode_name(axis_motion_config_.z));
 	}
 
 	void append_square_laps(float half_extent, int laps, float yaw)
@@ -560,6 +678,11 @@ private:
 			return;
 		}
 
+		if (trajectory_phase_ == TrajectoryPhase::ConfiguredInput) {
+			update_configured_axis_input();
+			return;
+		}
+
 		const double t = phase_elapsed_sec();
 		const double omega = 2.0 * pi_ / sin_period_sec_;
 		const float s = std::sin(omega * t);
@@ -615,6 +738,60 @@ private:
 		}
 	}
 
+	void update_configured_axis_input()
+	{
+		const double t = phase_elapsed_sec();
+		const double omega = 2.0 * pi_ / sin_period_sec_;
+		const float s = std::sin(omega * t);
+		const float c = std::cos(omega * t);
+		const bool step_applied = t >= step_hold_duration_sec_;
+
+		target_x_ = axis_target(axis_motion_config_.x, 0.0f, x_sin_amplitude_, 1.0f, s, step_applied);
+		target_y_ = axis_target(axis_motion_config_.y, 0.0f, sin_xy_amplitude_, 1.0f, s, step_applied);
+		target_z_ = axis_target(axis_motion_config_.z, fixed_altitude_, sin_z_amplitude_, -0.5f, s, step_applied);
+		setpoint_vx_ = axis_velocity(axis_motion_config_.x, x_sin_amplitude_, omega, c);
+		setpoint_vy_ = axis_velocity(axis_motion_config_.y, sin_xy_amplitude_, omega, c);
+		setpoint_vz_ = axis_velocity(axis_motion_config_.z, sin_z_amplitude_, omega, c);
+		setpoint_yawspeed_ = 0.0f;
+
+		if (t >= sin_phase_duration_sec_) {
+			enter_phase(TrajectoryPhase::Done);
+			target_x_ = 0.0f;
+			target_y_ = 0.0f;
+			target_z_ = fixed_altitude_;
+			setpoint_vx_ = 0.0f;
+			setpoint_vy_ = 0.0f;
+			setpoint_vz_ = 0.0f;
+			mark_log_event("axis_input_done");
+			RCLCPP_INFO(this->get_logger(), "Axis input completed");
+		}
+	}
+
+	float axis_target(
+		AxisMotionMode mode,
+		float center,
+		float sin_amplitude,
+		float step_offset,
+		float sin_value,
+		bool step_applied) const
+	{
+		if (mode == AxisMotionMode::Sin) {
+			return center + sin_amplitude * sin_value;
+		}
+		if (mode == AxisMotionMode::Step) {
+			return center + (step_applied ? step_offset : 0.0f);
+		}
+		return center;
+	}
+
+	float axis_velocity(AxisMotionMode mode, float amplitude, double omega, float cos_value) const
+	{
+		if (mode == AxisMotionMode::Sin) {
+			return amplitude * omega * cos_value;
+		}
+		return 0.0f;
+	}
+
 	const char *phase_name() const
 	{
 		switch (trajectory_phase_) {
@@ -632,6 +809,8 @@ private:
 			return "StepHold";
 		case TrajectoryPhase::StepApplied:
 			return "StepApplied";
+		case TrajectoryPhase::ConfiguredInput:
+			return "ConfiguredInput";
 		case TrajectoryPhase::Done:
 			return "Done";
 		}
@@ -648,13 +827,34 @@ private:
 
 		log_file_
 			<< control_elapsed_sec() << ","
+			<< current_local_position_timestamp_ << "," << current_local_position_timestamp_sample_ << ","
 			<< current_x_ << "," << current_y_ << "," << current_z_ << ","
 			<< current_vx_ << "," << current_vy_ << "," << current_vz_ << ","
-			<< current_roll_ << "," << current_pitch_ << "," << current_yaw_ << ","
-			<< current_wx_ << "," << current_wy_ << "," << current_wz_;
+			<< current_z_deriv_;
+
+		if (got_attitude_) {
+			log_file_ << "," << current_attitude_timestamp_
+				<< "," << current_attitude_timestamp_sample_
+				<< "," << current_roll_
+				<< "," << current_pitch_
+				<< "," << current_yaw_;
+		} else {
+			log_file_ << ",nan,nan,nan,nan,nan";
+		}
+
+		if (has_angular_velocity_) {
+			log_file_ << "," << latest_angular_velocity_.timestamp
+				<< "," << latest_angular_velocity_.timestamp_sample
+				<< "," << latest_angular_velocity_.xyz[0]
+				<< "," << latest_angular_velocity_.xyz[1]
+				<< "," << latest_angular_velocity_.xyz[2];
+		} else {
+			log_file_ << ",nan,nan,nan,nan,nan";
+		}
 
 		if (has_traj_sp_) {
-			log_file_ << "," << latest_traj_sp_.x
+			log_file_ << "," << latest_traj_sp_.timestamp
+				<< "," << latest_traj_sp_.x
 				<< "," << latest_traj_sp_.y
 				<< "," << latest_traj_sp_.z
 				<< "," << latest_traj_sp_.yaw
@@ -666,27 +866,29 @@ private:
 				<< "," << latest_traj_sp_.acceleration[2]
 				<< "," << latest_traj_sp_.yawspeed;
 		} else {
-			log_file_ << ",nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan";
+			log_file_ << ",nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan";
 		}
 
 		if (has_att_sp_) {
-			log_file_ << "," << latest_att_sp_.q_d[0]
+			log_file_ << "," << latest_att_sp_.timestamp
+				<< "," << latest_att_sp_.q_d[0]
 				<< "," << latest_att_sp_.q_d[1]
 				<< "," << latest_att_sp_.q_d[2]
 				<< "," << latest_att_sp_.q_d[3];
 		} else {
-			log_file_ << ",nan,nan,nan,nan";
+			log_file_ << ",nan,nan,nan,nan,nan";
 		}
 
 		if (has_rate_sp_) {
-			log_file_ << "," << latest_rate_sp_.roll
+			log_file_ << "," << latest_rate_sp_.timestamp
+				<< "," << latest_rate_sp_.roll
 				<< "," << latest_rate_sp_.pitch
 				<< "," << latest_rate_sp_.yaw
 				<< "," << latest_rate_sp_.thrust_body[0]
 				<< "," << latest_rate_sp_.thrust_body[1]
 				<< "," << latest_rate_sp_.thrust_body[2];
 		} else {
-			log_file_ << ",nan,nan,nan,nan,nan,nan";
+			log_file_ << ",nan,nan,nan,nan,nan,nan,nan";
 		}
 
 		const std::string event = consume_log_event();
@@ -695,41 +897,53 @@ private:
 			<< phase_name() << "," << event;
 
 		if (has_hover_thrust_estimate_) {
-			log_file_ << "," << latest_hover_thrust_estimate_.hover_thrust
+			log_file_ << "," << latest_hover_thrust_estimate_.timestamp
+				<< "," << latest_hover_thrust_estimate_.hover_thrust
 				<< "," << static_cast<int>(latest_hover_thrust_estimate_.valid);
 		} else {
-			log_file_ << ",nan,nan";
+			log_file_ << ",nan,nan,nan";
 		}
 
 		if (has_takeoff_status_) {
-			log_file_ << "," << static_cast<int>(latest_takeoff_status_.takeoff_state)
+			log_file_ << "," << latest_takeoff_status_.timestamp
+				<< "," << static_cast<int>(latest_takeoff_status_.takeoff_state)
 				<< "," << latest_takeoff_status_.tilt_limit;
 		} else {
-			log_file_ << ",nan,nan";
+			log_file_ << ",nan,nan,nan";
 		}
 
 		if (has_vehicle_land_detected_) {
-			log_file_ << "," << static_cast<int>(latest_vehicle_land_detected_.landed)
+			log_file_ << "," << latest_vehicle_land_detected_.timestamp
+				<< "," << static_cast<int>(latest_vehicle_land_detected_.landed)
 				<< "," << static_cast<int>(latest_vehicle_land_detected_.ground_contact)
 				<< "," << static_cast<int>(latest_vehicle_land_detected_.maybe_landed);
 		} else {
-			log_file_ << ",nan,nan,nan";
+			log_file_ << ",nan,nan,nan,nan";
 		}
 
 		if (has_thrust_sp_) {
-			log_file_ << "," << latest_thrust_sp_.xyz[0]
+			log_file_ << "," << latest_thrust_sp_.timestamp
+				<< "," << latest_thrust_sp_.xyz[0]
 				<< "," << latest_thrust_sp_.xyz[1]
 				<< "," << latest_thrust_sp_.xyz[2];
 		} else {
-			log_file_ << ",nan,nan,nan";
+			log_file_ << ",nan,nan,nan,nan";
 		}
 
 		if (has_torque_sp_) {
-			log_file_ << "," << latest_torque_sp_.xyz[0]
+			log_file_ << "," << latest_torque_sp_.timestamp
+				<< "," << latest_torque_sp_.xyz[0]
 				<< "," << latest_torque_sp_.xyz[1]
 				<< "," << latest_torque_sp_.xyz[2];
 		} else {
-			log_file_ << ",nan,nan,nan";
+			log_file_ << ",nan,nan,nan,nan";
+		}
+
+		if (has_actuator_motors_) {
+			log_file_ << "," << latest_actuator_motors_.timestamp
+				<< "," << latest_actuator_motors_.timestamp_sample;
+		} else {
+			log_file_ << ",nan,nan";
 		}
 
 		if (has_actuator_motors_) {
@@ -749,6 +963,27 @@ private:
 				<< "," << latest_rate_ctrl_status_.yawspeed_integ;
 		} else {
 			log_file_ << ",nan,nan,nan,nan";
+		}
+
+		if (has_livox_imu_) {
+			const double livox_imu_time_s =
+				static_cast<double>(latest_livox_imu_.header.stamp.sec) +
+				static_cast<double>(latest_livox_imu_.header.stamp.nanosec) * 1.0e-9;
+			log_file_ << "," << livox_imu_time_s
+				<< "," << latest_livox_imu_.header.stamp.sec
+				<< "," << latest_livox_imu_.header.stamp.nanosec
+				<< "," << latest_livox_imu_.orientation.x
+				<< "," << latest_livox_imu_.orientation.y
+				<< "," << latest_livox_imu_.orientation.z
+				<< "," << latest_livox_imu_.orientation.w
+				<< "," << latest_livox_imu_.angular_velocity.x
+				<< "," << latest_livox_imu_.angular_velocity.y
+				<< "," << latest_livox_imu_.angular_velocity.z
+				<< "," << latest_livox_imu_.linear_acceleration.x
+				<< "," << latest_livox_imu_.linear_acceleration.y
+				<< "," << latest_livox_imu_.linear_acceleration.z;
+		} else {
+			log_file_ << ",nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan";
 		}
 
 		log_file_ << "\n";
@@ -777,9 +1012,9 @@ private:
 	{
 		TrajectorySetpoint msg{};
 		msg.position = {target_x_, target_y_, target_z_};
-		msg.velocity = {0.0f, 0.0f, 0.0f};
+		msg.velocity = {NAN, NAN, NAN};
 		msg.yaw = target_yaw_;
-		msg.yawspeed = 0.0f;
+		msg.yawspeed = NAN;
 		msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
 		trajectory_setpoint_publisher_->publish(msg);
 	}
@@ -869,21 +1104,12 @@ private:
 		vehicle_command_publisher_->publish(msg);
 	}
 
-	void local_position_callback(const px4_msgs::msg::VehicleOdometry::ConstSharedPtr msg )
+	void update_attitude_from_quaternion(const std::array<float, 4> &q)
 	{
-		current_x_ = msg->position[0];
-		current_y_ = msg->position[1];
-		current_z_ = msg->position[2];
-		current_vx_ = msg->velocity[0];
-		current_vy_ = msg->velocity[1];
-		current_vz_ = msg->velocity[2];
-		current_wx_ = msg->angular_velocity[0];
-		current_wy_ = msg->angular_velocity[1];
-		current_wz_ = msg->angular_velocity[2];
-		double q_w = msg->q[0];
-		double q_x = msg->q[1];
-		double q_y = msg->q[2];
-		double q_z = msg->q[3];
+		const double q_w = q[0];
+		const double q_x = q[1];
+		const double q_y = q[2];
+		const double q_z = q[3];
 		double sinr_cosp = 2.0 * (q_w * q_x + q_y * q_z);
 		double cosr_cosp = 1.0 - 2.0 * (q_x * q_x + q_y * q_y);
 		current_roll_ = std::atan2(sinr_cosp, cosr_cosp);
@@ -896,7 +1122,23 @@ private:
 		double siny_cosp = 2.0 * (q_w * q_z + q_x * q_y);
 		double cosy_cosp = 1.0 - 2.0 * (q_y * q_y + q_z * q_z);
 		current_yaw_ = std::atan2(siny_cosp, cosy_cosp);
-		got_local_pos_ = true;
+	}
+
+	void local_position_callback(const px4_msgs::msg::VehicleLocalPosition::ConstSharedPtr msg)
+	{
+		{
+			std::lock_guard<std::mutex> lock(sp_mutex_);
+			current_local_position_timestamp_ = msg->timestamp;
+			current_local_position_timestamp_sample_ = msg->timestamp_sample;
+			current_x_ = msg->x;
+			current_y_ = msg->y;
+			current_z_ = msg->z;
+			current_vx_ = msg->vx;
+			current_vy_ = msg->vy;
+			current_vz_ = msg->vz;
+			current_z_deriv_ = msg->z_deriv;
+			got_local_pos_ = true;
+		}
 
 		if (offboard_enabled_ && is_armed_ && !emergency_stop_) {
 			log_control_state();
@@ -906,11 +1148,33 @@ private:
 			current_x_, current_y_, current_z_, current_yaw_);
 	}
 
+	void vehicle_attitude_callback(const px4_msgs::msg::VehicleAttitude::ConstSharedPtr msg)
+	{
+		std::lock_guard<std::mutex> lock(sp_mutex_);
+		current_attitude_timestamp_ = msg->timestamp;
+		current_attitude_timestamp_sample_ = msg->timestamp_sample;
+		update_attitude_from_quaternion(msg->q);
+		got_attitude_ = true;
+	}
+
 	void angular_velocity_callback(const px4_msgs::msg::VehicleAngularVelocity::ConstSharedPtr msg)
 	{
+		std::lock_guard<std::mutex> lock(sp_mutex_);
+		latest_angular_velocity_ = *msg;
+		current_angular_velocity_timestamp_ = msg->timestamp;
+		current_angular_velocity_timestamp_sample_ = msg->timestamp_sample;
 		current_wx_ = msg->xyz[0];
 		current_wy_ = msg->xyz[1];
 		current_wz_ = msg->xyz[2];
+		has_angular_velocity_ = true;
+		got_angular_velocity_ = true;
+	}
+
+	void livox_imu_callback(const sensor_msgs::msg::Imu::ConstSharedPtr msg)
+	{
+		std::lock_guard<std::mutex> lock(sp_mutex_);
+		latest_livox_imu_ = *msg;
+		has_livox_imu_ = true;
 	}
 
 	void joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg)
@@ -944,7 +1208,7 @@ private:
 			} else {
 				// start_square_trajectory();
 				// start_step_input();
-				start_x_sine_input();
+				start_configured_axis_input();
 			}
 		}
 
